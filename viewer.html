@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Omarchy PDF Viewer</title>
+<title>Zen PDF Viewer</title>
 <style>
 :root { color-scheme: dark; }
 html, body {
@@ -13,26 +13,29 @@ html, body {
   color: #dcfce7;
   font-family: "Inter", "JetBrainsMono Nerd Font", sans-serif;
 }
-#toolbar {
-  position: fixed;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  min-height: 30px;
-  max-width: calc(100vw - 16px);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  background: rgba(18, 17, 17, 0.45);
-  border: 1px solid rgba(220, 252, 231, 0.12);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  z-index: 999;
-}
+/* toolbar removed; keyboard-only controls + overlays */
 #viewerContainer {
-  padding: 8px 8px 54px;
+  padding: 8px 8px 12px;
+}
+
+#zenToast { position: fixed; bottom: 18px; left: 18px; background: rgba(18,17,17,0.85); color: #dcfce7; padding:8px 10px; border-radius:8px; border:1px solid rgba(220,252,231,0.08); z-index:1000; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); font-size:13px; }
+#zenToast .toast-content { display:flex; gap:8px; align-items:center; }
+#zenToast label { font-size:13px; margin-left:6px; display:flex; align-items:center; gap:6px; }
+#zenToast button { background:transparent; border:1px solid rgba(220,252,231,0.08); color:inherit; padding:4px 6px; border-radius:6px; cursor:pointer; }
+
+.overlay { position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; background: rgba(0,0,0,0.45); z-index:1001; }
+.overlay[hidden] { display:none; }
+.overlay-inner { background: rgba(18,17,17,0.9); padding: 18px; border-radius: 10px; width: min(900px, 92vw); max-height: 86vh; overflow:auto; border:1px solid rgba(220,252,231,0.08); }
+.overlay h2 { margin-top:0; margin-bottom:8px; }
+#keybindsText { white-space: pre-wrap; font-family: monospace; font-size:13px; color:#dcfce7; }
+
+
+.zen-mode #viewerContainer {
+  padding: 8px 0 54px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
 }
 .pageShell {
   position: relative;
@@ -40,6 +43,11 @@ html, body {
   border-radius: 8px;
   overflow: hidden;
   background: transparent;
+}
+
+.zen-mode .pageShell {
+  margin: 0;
+  border-radius: 0;
 }
 .pageCanvas {
   position: absolute;
@@ -101,14 +109,44 @@ input[type="range"] { accent-color: #4ade7f; }
 </style>
 </head>
 <body>
-<div id="toolbar">
-  <button id="prev" title="Previous page">◀</button>
-  <button id="next" title="Next page">▶</button>
-  <input id="pageNum" type="number" min="1" value="1" title="Page">
-  <span id="pageCount">/ 0</span>
-  <label>Zoom <input id="zoom" type="range" min="50" max="250" value="100"></label>
-  <label><input id="toggleZathura" type="checkbox" checked> Zathura mode</label>
-  <label><input id="toggleImagesColor" type="checkbox"> Keep images color</label>
+<div id="zenToast" hidden>
+  <div class="toast-content">
+    <span>Press Esc to open keybinds</span>
+    <label><input id="toastDontShow" type="checkbox"> Don't show again</label>
+    <button id="toastClose">OK</button>
+  </div>
+</div>
+
+<div id="keybindsOverlay" class="overlay" hidden>
+  <div class="overlay-inner">
+    <button id="keybindsClose" class="close" aria-label="Close">×</button>
+    <h2>Zen PDF Viewer — Keybindings</h2>
+    <pre id="keybindsText">Mouse and Key Bindings
+General
+Input 	Description
+J, PgDn 	Go to the next page
+K, PgUp 	Go to the previous page
+h, j, k, l 	Scroll left, down, up or right
+Left, Down, Up, Right 	Scroll left, down, up or right
+^t, ^d, ^u, ^y 	Scroll a half page left, down, up or right
+space, b 	Page down/up
+gg, G, nG 	Goto first, last or nth page
+P 	Snap to the current page (center)
+H, L 	Goto top or bottom of the current page
+^o, ^i 	Move backward and forward through the jump list
+^c, Escape 	Abort/close overlays
+a, s 	Adjust window in best-fit or width mode (a=best-fit, s=fit width)
+/, ? 	Search for text (prompt)
+n, N 	Next/previous search result
+r 	Rotate by 90 degrees
+^r 	Recolor (toggle Zen mode - grayscale/invert)
+R 	Reload document
+F11 	Toggle fullscreen
++, -, = 	Zoom in, out or to original
+q 	Quit
+</pre>
+    <div style="text-align:right; margin-top:8px"><button id="keybindsCloseBtn">Close</button></div>
+  </div>
 </div>
 <div id="error"></div>
 <div id="viewerContainer"></div>
@@ -126,24 +164,31 @@ input[type="range"] { accent-color: #4ade7f; }
   const state = {
     scale: 1,
     pdfDoc: null,
-    zathuraMode: params.get("zmode") !== "0",
+    zenMode: params.get("zen") !== "0",
     keepImagesColor: params.get("imgcolor") === "1",
     renderToken: 0,
   };
 
   const container = document.getElementById("viewerContainer");
   const errorEl = document.getElementById("error");
-  const pageNumInput = document.getElementById("pageNum");
-  const pageCountEl = document.getElementById("pageCount");
-  const zoomInput = document.getElementById("zoom");
-  const zathuraInput = document.getElementById("toggleZathura");
-  const imagesColorInput = document.getElementById("toggleImagesColor");
-  const toolbar = document.getElementById("toolbar");
+  const zoomInput = document.getElementById("zoom"); // optional (toolbar removed)
+  const zenToast = document.getElementById("zenToast");
+  const keybindsOverlay = document.getElementById("keybindsOverlay");
+  const keybindsText = document.getElementById("keybindsText");
+  const keybindsClose = document.getElementById("keybindsClose");
+  const keybindsCloseBtn = document.getElementById("keybindsCloseBtn");
 
-  zathuraInput.checked = state.zathuraMode;
-  imagesColorInput.checked = state.keepImagesColor;
-  toolbar.style.background = theme.toolbarBg;
-  document.body.style.color = theme.fg;
+  // Apply theme and initial mode
+  if (document.body) document.body.style.color = theme.fg;
+  updateModeClass();
+
+  // viewer state
+  state.currentPage = 1;
+  state.rotation = 0;
+  state.jumpBack = [];
+  state.jumpForward = [];
+  state.searchMatches = [];
+  state.searchIndex = -1;
 
   function clamp(v, min, max) {
     return Math.min(max, Math.max(min, v));
@@ -154,7 +199,7 @@ input[type="range"] { accent-color: #4ade7f; }
     errorEl.style.display = "block";
   }
 
-  function applyZathuraFilter(ctx, w, h, keepImagesColor) {
+  function applyZenFilter(ctx, w, h, keepImagesColor) {
     const img = ctx.getImageData(0, 0, w, h);
     const d = img.data;
     for (let i = 0; i < d.length; i += 4) {
@@ -186,6 +231,11 @@ input[type="range"] { accent-color: #4ade7f; }
     ctx.putImageData(img, 0, 0);
   }
 
+  function updateModeClass() {
+    if (state.zenMode) document.documentElement.classList.add("zen-mode");
+    else document.documentElement.classList.remove("zen-mode");
+  }
+
   async function renderTextLayer(page, viewport, textLayerDiv) {
     const textContent = await page.getTextContent();
     const textDivs = [];
@@ -207,7 +257,7 @@ input[type="range"] { accent-color: #4ade7f; }
 
   async function renderPage(pageNumber) {
     const page = await state.pdfDoc.getPage(pageNumber);
-    const viewport = page.getViewport({ scale: state.scale });
+    const viewport = page.getViewport({ scale: state.scale, rotation: (state.rotation || 0) });
 
     const shell = document.createElement("div");
     shell.className = "pageShell";
@@ -230,20 +280,20 @@ input[type="range"] { accent-color: #4ade7f; }
 
     const ctx = canvas.getContext("2d", {
       alpha: true,
-      willReadFrequently: state.zathuraMode,
+      willReadFrequently: state.zenMode,
     });
 
     const renderParams = {
       canvasContext: ctx,
       viewport,
-      background: state.zathuraMode ? "rgba(0,0,0,0)" : "rgb(255,255,255)",
+      background: state.zenMode ? "rgba(0,0,0,0)" : "rgb(255,255,255)",
       transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null,
     };
 
     await page.render(renderParams).promise;
 
-    if (state.zathuraMode) {
-      applyZathuraFilter(ctx, canvas.width, canvas.height, state.keepImagesColor);
+    if (state.zenMode) {
+      applyZenFilter(ctx, canvas.width, canvas.height, state.keepImagesColor);
     }
 
     await renderTextLayer(page, viewport, textLayer);
@@ -254,7 +304,6 @@ input[type="range"] { accent-color: #4ade7f; }
     if (!state.pdfDoc) return;
     const token = ++state.renderToken;
     container.innerHTML = "";
-    pageCountEl.textContent = `/ ${state.pdfDoc.numPages}`;
 
     for (let i = 1; i <= state.pdfDoc.numPages; i++) {
       if (token !== state.renderToken) return;
@@ -263,52 +312,170 @@ input[type="range"] { accent-color: #4ade7f; }
       container.appendChild(pageNode);
     }
 
-    pageNumInput.value = "1";
+    // reset current page
+    state.currentPage = 1;
   }
 
   function goToPage(n, smooth = true) {
     const pageNo = clamp(Number.parseInt(n, 10) || 1, 1, state.pdfDoc?.numPages || 1);
     const el = document.getElementById(`page-${pageNo}`);
     if (!el) return;
-    pageNumInput.value = String(pageNo);
+    // push current page into jump history
+    if (state.currentPage && state.currentPage !== pageNo) {
+      state.jumpBack.push(state.currentPage);
+      state.jumpForward = [];
+    }
+    state.currentPage = pageNo;
     window.scrollTo({ top: Math.max(0, el.offsetTop - 15), behavior: smooth ? "smooth" : "auto" });
   }
 
   function bindEvents() {
-    document.getElementById("prev").addEventListener("click", () => {
-      goToPage((Number.parseInt(pageNumInput.value, 10) || 1) - 1);
-    });
-
-    document.getElementById("next").addEventListener("click", () => {
-      goToPage((Number.parseInt(pageNumInput.value, 10) || 1) + 1);
-    });
-
-    pageNumInput.addEventListener("change", () => goToPage(pageNumInput.value));
-
-    zoomInput.addEventListener("input", async (e) => {
-      state.scale = Number.parseInt(e.target.value, 10) / 100;
-      await renderAll();
-      goToPage(pageNumInput.value, false);
-    });
-
-    zathuraInput.addEventListener("change", async (e) => {
-      state.zathuraMode = !!e.target.checked;
-      await renderAll();
-      goToPage(pageNumInput.value, false);
-    });
-
-    imagesColorInput.addEventListener("change", async (e) => {
-      state.keepImagesColor = !!e.target.checked;
-      await renderAll();
-      goToPage(pageNumInput.value, false);
-    });
-
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowRight" || e.key === "PageDown") {
-        document.getElementById("next").click();
-      } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
-        document.getElementById("prev").click();
+    // Toast handling
+    try {
+      if (zenToast) {
+        const disabled = localStorage.getItem('zen_pdf_toast_disabled') === '1';
+        if (!disabled) zenToast.hidden = false;
+        const toastCloseBtn = document.getElementById('toastClose');
+        const toastDont = document.getElementById('toastDontShow');
+        if (toastCloseBtn) toastCloseBtn.addEventListener('click', () => {
+          zenToast.hidden = true;
+          if (toastDont && toastDont.checked) localStorage.setItem('zen_pdf_toast_disabled','1');
+        });
       }
+    } catch (e) { /* ignore */ }
+
+    // keybinds overlay close
+    if (keybindsClose) keybindsClose.addEventListener('click', () => { if (keybindsOverlay) keybindsOverlay.hidden = true; });
+    if (keybindsCloseBtn) keybindsCloseBtn.addEventListener('click', () => { if (keybindsOverlay) keybindsOverlay.hidden = true; });
+
+    // helper functions
+    let lastKey = null;
+    let lastKeyTime = 0;
+    let numericBuffer = '';
+    let seqTimer = null;
+    function setSeqTimer() { if (seqTimer) clearTimeout(seqTimer); seqTimer = setTimeout(() => { numericBuffer=''; lastKey=null; seqTimer=null; }, 800); }
+
+    function snapToNearestPage() {
+      const centerY = window.scrollY + window.innerHeight/2;
+      let best = 1;
+      let bestDist = Infinity;
+      for (let i=1;i<=state.pdfDoc.numPages;i++) {
+        const el = document.getElementById('page-'+i);
+        if (!el) continue;
+        const top = el.offsetTop;
+        const h = el.offsetHeight;
+        const pageCenter = top + h/2;
+        const d = Math.abs(pageCenter - centerY);
+        if (d < bestDist) { bestDist = d; best = i; }
+      }
+      goToPage(best);
+    }
+
+    async function handleSearchPrompt() {
+      const q = prompt('Search for:');
+      if (!q) return;
+      const matches = [];
+      for (let p=1;p<=state.pdfDoc.numPages;p++) {
+        const el = document.getElementById('page-'+p);
+        const textLayer = el ? el.querySelector('.textLayer') : null;
+        const text = textLayer ? textLayer.innerText : '';
+        if (text.toLowerCase().includes(q.toLowerCase())) matches.push(p);
+      }
+      if (matches.length === 0) return;
+      state.searchMatches = matches;
+      state.searchIndex = 0;
+      goToPage(matches[0]);
+    }
+
+    document.addEventListener('keydown', async (e) => {
+      const active = document.activeElement && document.activeElement.tagName && document.activeElement.tagName.toLowerCase();
+      if (active === 'input' || active === 'textarea') {
+        if (e.key === 'Escape') document.activeElement.blur();
+        return;
+      }
+
+      // Toggle keybind viewer on Escape
+      if (e.key === 'Escape') {
+        if (keybindsOverlay) keybindsOverlay.hidden = !keybindsOverlay.hidden;
+        e.preventDefault();
+        return;
+      }
+
+      // numeric buffer
+      if (e.key >= '0' && e.key <= '9') { numericBuffer += e.key; setSeqTimer(); return; }
+
+      // gg -> first page
+      if (e.key === 'g') {
+        const now = Date.now();
+        if (lastKey === 'g' && (now - lastKeyTime) < 600) { goToPage(1); lastKey = null; setSeqTimer(); }
+        else { lastKey = 'g'; lastKeyTime = now; setSeqTimer(); }
+        e.preventDefault();
+        return;
+      }
+
+      // nG -> goto page n, G -> last page
+      if (e.key === 'G') {
+        if (numericBuffer.length > 0) { const p = parseInt(numericBuffer,10); numericBuffer=''; goToPage(p); }
+        else { goToPage(state.pdfDoc.numPages); }
+        e.preventDefault();
+        return;
+      }
+
+      // Next/Prev page (uppercase J/K or PgDown/PgUp)
+      if (e.key === 'J' || e.key === 'PageDown') { goToPage(state.currentPage + 1); e.preventDefault(); return; }
+      if (e.key === 'K' || e.key === 'PageUp') { goToPage(state.currentPage - 1); e.preventDefault(); return; }
+
+      // small scrolls (lowercase j/k/h/l)
+      const small = Math.max(50, Math.floor(window.innerHeight * 0.12));
+      if (e.key === 'j') { window.scrollBy({ top: small, behavior: 'smooth' }); e.preventDefault(); return; }
+      if (e.key === 'k') { window.scrollBy({ top: -small, behavior: 'smooth' }); e.preventDefault(); return; }
+      if (e.key === 'h') { window.scrollBy({ left: -small, behavior: 'smooth' }); e.preventDefault(); return; }
+      if (e.key === 'l') { window.scrollBy({ left: small, behavior: 'smooth' }); e.preventDefault(); return; }
+
+      // arrows
+      if (e.key === 'ArrowDown') { window.scrollBy({ top: small, behavior: 'smooth' }); e.preventDefault(); return; }
+      if (e.key === 'ArrowUp') { window.scrollBy({ top: -small, behavior: 'smooth' }); e.preventDefault(); return; }
+      if (e.key === 'ArrowLeft') { window.scrollBy({ left: -small, behavior: 'smooth' }); e.preventDefault(); return; }
+      if (e.key === 'ArrowRight') { window.scrollBy({ left: small, behavior: 'smooth' }); e.preventDefault(); return; }
+
+      // page down/up via space/b
+      if (e.key === ' ') { goToPage(state.currentPage + 1); e.preventDefault(); return; }
+      if (e.key === 'b') { goToPage(state.currentPage - 1); e.preventDefault(); return; }
+
+      // snap to nearest page (P)
+      if (e.key === 'P') { snapToNearestPage(); e.preventDefault(); return; }
+
+      // H/L top/bottom of current page
+      if (e.key === 'H') { const el = document.getElementById('page-'+state.currentPage); if (el) window.scrollTo({ top: el.offsetTop, behavior: 'smooth' }); e.preventDefault(); return; }
+      if (e.key === 'L') { const el = document.getElementById('page-'+state.currentPage); if (el) window.scrollTo({ top: el.offsetTop + el.offsetHeight - window.innerHeight + 16, behavior: 'smooth' }); e.preventDefault(); return; }
+
+      // jump list Ctrl+o / Ctrl+i
+      if (e.ctrlKey && e.key === 'o') { const p = state.jumpBack.pop(); if (p) { state.jumpForward.push(state.currentPage); goToPage(p); } e.preventDefault(); return; }
+      if (e.ctrlKey && e.key === 'i') { const p = state.jumpForward.pop(); if (p) { state.jumpBack.push(state.currentPage); goToPage(p); } e.preventDefault(); return; }
+
+      // rotate (r) and recolor toggle (Ctrl+r)
+      if (e.key === 'r' && !e.ctrlKey) { state.rotation = (state.rotation + 90) % 360; renderAll().then(() => goToPage(state.currentPage,false)); e.preventDefault(); return; }
+      if (e.ctrlKey && e.key === 'r') { state.zenMode = !state.zenMode; updateModeClass(); renderAll(); e.preventDefault(); return; }
+
+      // reload
+      if (e.key === 'R') { location.reload(); e.preventDefault(); return; }
+
+      // fullscreen
+      if (e.key === 'F11') { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{}); else document.exitFullscreen().catch(()=>{}); e.preventDefault(); return; }
+
+      // zoom + - =
+      if (e.key === '+' || e.key === '=') { state.scale = Math.min(state.scale * 1.1, 4); renderAll().then(()=>goToPage(state.currentPage,false)); e.preventDefault(); return; }
+      if (e.key === '-') { state.scale = Math.max(state.scale / 1.1, 0.1); renderAll().then(()=>goToPage(state.currentPage,false)); e.preventDefault(); return; }
+      if (e.key === '0') { state.scale = 1; renderAll().then(()=>goToPage(state.currentPage,false)); e.preventDefault(); return; }
+
+      // search
+      if (e.key === '/') { handleSearchPrompt(); e.preventDefault(); return; }
+      if (e.key === 'n' && state.searchMatches.length>0) { state.searchIndex = (state.searchIndex+1) % state.searchMatches.length; goToPage(state.searchMatches[state.searchIndex]); e.preventDefault(); return; }
+      if (e.key === 'N' && state.searchMatches.length>0) { state.searchIndex = (state.searchIndex-1+state.searchMatches.length)%state.searchMatches.length; goToPage(state.searchMatches[state.searchIndex]); e.preventDefault(); return; }
+
+      // quit
+      if (e.key === 'q') { try { window.close(); } catch(err) { location.href='about:blank'; } e.preventDefault(); return; }
+
     });
   }
 
@@ -333,7 +500,7 @@ input[type="range"] { accent-color: #4ade7f; }
         try {
           const firstPage = await state.pdfDoc.getPage(1);
           const vp = firstPage.getViewport({ scale: 1 });
-          const toolbarH = (toolbar && toolbar.offsetHeight) ? toolbar.offsetHeight : 40;
+          const toolbarH = 0;
           const pad = 16;
           const availableW = Math.max(100, window.innerWidth - pad);
           const availableH = Math.max(100, window.innerHeight - toolbarH - pad);
