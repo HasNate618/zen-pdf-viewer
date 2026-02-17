@@ -1,0 +1,342 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Omarchy PDF Viewer</title>
+<style>
+:root { color-scheme: dark; }
+html, body {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  color: #dcfce7;
+  font-family: "Inter", "JetBrainsMono Nerd Font", sans-serif;
+}
+#toolbar {
+  position: fixed;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  min-height: 30px;
+  max-width: calc(100vw - 16px);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(18, 17, 17, 0.45);
+  border: 1px solid rgba(220, 252, 231, 0.12);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 999;
+}
+#viewerContainer {
+  padding: 8px 8px 54px;
+}
+.pageShell {
+  position: relative;
+  margin: 14px auto;
+  border-radius: 8px;
+  overflow: hidden;
+  background: transparent;
+}
+.pageCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+}
+.textLayer span,
+.textLayer br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+.textLayer ::selection { background: rgba(74, 222, 127, 0.35); }
+button,
+input,
+label { color: inherit; font: inherit; }
+label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+button {
+  background: rgba(18, 17, 17, 0.45);
+  border: 1px solid rgba(220, 252, 231, 0.2);
+  border-radius: 6px;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+input[type="number"] {
+  width: 50px;
+  background: rgba(18, 17, 17, 0.45);
+  border: 1px solid rgba(220, 252, 231, 0.2);
+  border-radius: 6px;
+  padding: 4px;
+}
+input[type="range"] { accent-color: #4ade7f; }
+#error {
+  margin: 90px auto 0;
+  max-width: 720px;
+  background: rgba(185, 28, 28, 0.2);
+  border: 1px solid rgba(185, 28, 28, 0.5);
+  border-radius: 10px;
+  padding: 12px;
+  display: none;
+}
+</style>
+</head>
+<body>
+<div id="toolbar">
+  <button id="prev" title="Previous page">◀</button>
+  <button id="next" title="Next page">▶</button>
+  <input id="pageNum" type="number" min="1" value="1" title="Page">
+  <span id="pageCount">/ 0</span>
+  <label>Zoom <input id="zoom" type="range" min="50" max="250" value="100"></label>
+  <label><input id="toggleZathura" type="checkbox" checked> Zathura mode</label>
+  <label><input id="toggleImagesColor" type="checkbox"> Keep images color</label>
+</div>
+<div id="error"></div>
+<div id="viewerContainer"></div>
+
+<script src="https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.min.js"></script>
+<script>
+(() => {
+  const params = new URLSearchParams(location.search);
+  const file = params.get("file") || "";
+  const theme = {
+    fg: params.get("fg") || "#dcfce7",
+    toolbarBg: params.get("bg") || "rgba(18,17,17,0.45)",
+  };
+
+  const state = {
+    scale: 1,
+    pdfDoc: null,
+    zathuraMode: params.get("zmode") !== "0",
+    keepImagesColor: params.get("imgcolor") === "1",
+    renderToken: 0,
+  };
+
+  const container = document.getElementById("viewerContainer");
+  const errorEl = document.getElementById("error");
+  const pageNumInput = document.getElementById("pageNum");
+  const pageCountEl = document.getElementById("pageCount");
+  const zoomInput = document.getElementById("zoom");
+  const zathuraInput = document.getElementById("toggleZathura");
+  const imagesColorInput = document.getElementById("toggleImagesColor");
+  const toolbar = document.getElementById("toolbar");
+
+  zathuraInput.checked = state.zathuraMode;
+  imagesColorInput.checked = state.keepImagesColor;
+  toolbar.style.background = theme.toolbarBg;
+  document.body.style.color = theme.fg;
+
+  function clamp(v, min, max) {
+    return Math.min(max, Math.max(min, v));
+  }
+
+  function showError(message) {
+    errorEl.textContent = message;
+    errorEl.style.display = "block";
+  }
+
+  function applyZathuraFilter(ctx, w, h, keepImagesColor) {
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const a = d[i + 3];
+      if (a === 0) continue;
+
+      const r = d[i];
+      const g = d[i + 1];
+      const b = d[i + 2];
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const chroma = max - min;
+      const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+      if (keepImagesColor && chroma > 36 && luma > 12 && luma < 244) {
+        continue;
+      }
+
+      const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+      const inv = 255 - gray;
+      if (inv < 4 && chroma < 6) {
+        d[i + 3] = 0;
+        continue;
+      }
+      d[i] = inv;
+      d[i + 1] = inv;
+      d[i + 2] = inv;
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  async function renderTextLayer(page, viewport, textLayerDiv) {
+    const textContent = await page.getTextContent();
+    const textDivs = [];
+    const task = pdfjsLib.renderTextLayer({
+      textContent,
+      textContentSource: textContent,
+      container: textLayerDiv,
+      viewport,
+      textDivs,
+      textContentItemsStr: [],
+      enhanceTextSelection: true,
+    });
+    if (task?.promise) {
+      await task.promise;
+    } else {
+      await task;
+    }
+  }
+
+  async function renderPage(pageNumber) {
+    const page = await state.pdfDoc.getPage(pageNumber);
+    const viewport = page.getViewport({ scale: state.scale });
+
+    const shell = document.createElement("div");
+    shell.className = "pageShell";
+    shell.id = `page-${pageNumber}`;
+    shell.style.width = `${viewport.width}px`;
+    shell.style.height = `${viewport.height}px`;
+
+    const canvas = document.createElement("canvas");
+    canvas.className = "pageCanvas";
+
+    const textLayer = document.createElement("div");
+    textLayer.className = "textLayer";
+
+    shell.appendChild(canvas);
+    shell.appendChild(textLayer);
+
+    const outputScale = Math.max(window.devicePixelRatio || 1, 1);
+    canvas.width = Math.floor(viewport.width * outputScale);
+    canvas.height = Math.floor(viewport.height * outputScale);
+
+    const ctx = canvas.getContext("2d", {
+      alpha: true,
+      willReadFrequently: state.zathuraMode,
+    });
+
+    const renderParams = {
+      canvasContext: ctx,
+      viewport,
+      background: state.zathuraMode ? "rgba(0,0,0,0)" : "rgb(255,255,255)",
+      transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null,
+    };
+
+    await page.render(renderParams).promise;
+
+    if (state.zathuraMode) {
+      applyZathuraFilter(ctx, canvas.width, canvas.height, state.keepImagesColor);
+    }
+
+    await renderTextLayer(page, viewport, textLayer);
+    return shell;
+  }
+
+  async function renderAll() {
+    if (!state.pdfDoc) return;
+    const token = ++state.renderToken;
+    container.innerHTML = "";
+    pageCountEl.textContent = `/ ${state.pdfDoc.numPages}`;
+
+    for (let i = 1; i <= state.pdfDoc.numPages; i++) {
+      if (token !== state.renderToken) return;
+      const pageNode = await renderPage(i);
+      if (token !== state.renderToken) return;
+      container.appendChild(pageNode);
+    }
+
+    pageNumInput.value = "1";
+  }
+
+  function goToPage(n, smooth = true) {
+    const pageNo = clamp(Number.parseInt(n, 10) || 1, 1, state.pdfDoc?.numPages || 1);
+    const el = document.getElementById(`page-${pageNo}`);
+    if (!el) return;
+    pageNumInput.value = String(pageNo);
+    window.scrollTo({ top: Math.max(0, el.offsetTop - 15), behavior: smooth ? "smooth" : "auto" });
+  }
+
+  function bindEvents() {
+    document.getElementById("prev").addEventListener("click", () => {
+      goToPage((Number.parseInt(pageNumInput.value, 10) || 1) - 1);
+    });
+
+    document.getElementById("next").addEventListener("click", () => {
+      goToPage((Number.parseInt(pageNumInput.value, 10) || 1) + 1);
+    });
+
+    pageNumInput.addEventListener("change", () => goToPage(pageNumInput.value));
+
+    zoomInput.addEventListener("input", async (e) => {
+      state.scale = Number.parseInt(e.target.value, 10) / 100;
+      await renderAll();
+      goToPage(pageNumInput.value, false);
+    });
+
+    zathuraInput.addEventListener("change", async (e) => {
+      state.zathuraMode = !!e.target.checked;
+      await renderAll();
+      goToPage(pageNumInput.value, false);
+    });
+
+    imagesColorInput.addEventListener("change", async (e) => {
+      state.keepImagesColor = !!e.target.checked;
+      await renderAll();
+      goToPage(pageNumInput.value, false);
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowRight" || e.key === "PageDown") {
+        document.getElementById("next").click();
+      } else if (e.key === "ArrowLeft" || e.key === "PageUp") {
+        document.getElementById("prev").click();
+      }
+    });
+  }
+
+  async function init() {
+    if (!file) {
+      showError("No PDF file specified.");
+      return;
+    }
+
+    try {
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.worker.min.js";
+
+      state.pdfDoc = await pdfjsLib.getDocument({
+        url: file,
+        withCredentials: false,
+      }).promise;
+
+      bindEvents();
+      await renderAll();
+    } catch (err) {
+      showError(`Could not render PDF: ${err?.message || err}`);
+      console.error(err);
+    }
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
