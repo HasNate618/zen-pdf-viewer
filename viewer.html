@@ -57,10 +57,14 @@ html, body {
   box-shadow: 0 12px 40px rgba(2,6,23,0.6);
 }
 .overlay h2 { margin-top:0; margin-bottom:6px; font-size:15px; }
-.keybinds-table { width: 100%; border-collapse: collapse; border-spacing: 0; table-layout: fixed; }
+.keybinds-table { width: 100%; border-collapse: collapse; border-spacing: 0; table-layout: auto; }
 .keybinds-table td { padding: 3px 5px; border: none; vertical-align: top; }
+.keybinds-table td:nth-child(1),
+.keybinds-table td:nth-child(3) { white-space: nowrap; padding-right: 2px; }
+.keybinds-table td:nth-child(2),
+.keybinds-table td:nth-child(4) { padding-left: 2px; }
 .keybinds-table td.empty { padding: 0; }
-.keybinds-table .keybind-key { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', monospace; font-weight:600; color:#e6fff6; background: rgba(255,255,255,0.03); padding:2px 5px; border-radius:5px; display:inline-block; min-width: 88px; font-size:11px; }
+.keybinds-table .keybind-key { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', monospace; font-weight:600; color:#e6fff6; font-size:11px; white-space: nowrap; }
 .keybinds-table .keybind-desc { color: #cfeee0; font-size:11.5px; line-height:1.2; }
 .overlay .close { position:absolute; top:8px; right:8px; background:transparent; color: #cfeee0; border: 0; font-size:20px; cursor:pointer; padding:6px 8px; border-radius:6px; }
 .overlay .close:hover { background: rgba(255,255,255,0.02); }
@@ -182,10 +186,11 @@ input[type="range"] { accent-color: #4ade7f; }
         <tr><td class="keybind-key">/</td><td class="keybind-desc">Goto page number</td></tr>
         <tr><td class="keybind-key">r</td><td class="keybind-desc">Rotate by 90 degrees</td></tr>
         <tr><td class="keybind-key">z</td><td class="keybind-desc">Toggle Zen mode</td></tr>
+        <tr><td class="keybind-key">c</td><td class="keybind-desc">Toggle color in Zen mode</td></tr>
         <tr><td class="keybind-key">R</td><td class="keybind-desc">Reload document</td></tr>
         <tr><td class="keybind-key">d</td><td class="keybind-desc">Toggle dual page view</td></tr>
         <tr><td class="keybind-key">F11</td><td class="keybind-desc">Toggle fullscreen mode</td></tr>
-        <tr><td class="keybind-key">+, -</td><td class="keybind-desc">Zoom in / out</td></tr>
+        <tr><td class="keybind-key">=, -</td><td class="keybind-desc">Zoom in / out</td></tr>
         <tr><td class="keybind-key">0</td><td class="keybind-desc">Reset zoom to 100%</td></tr>
         <tr><td class="keybind-key">q</td><td class="keybind-desc">Quit</td></tr>
       </tbody>
@@ -391,10 +396,25 @@ input[type="range"] { accent-color: #4ade7f; }
   }
 
   function getViewportAnchor() {
-    const page = state.currentPage || 1;
-    const el = document.getElementById(`page-${page}`);
-    if (!el) return { page, offset: 0 };
-    return { page, offset: window.scrollY - el.offsetTop };
+    if (!state.pdfDoc) return { page: state.currentPage || 1, ratio: 0.5 };
+    const centerY = window.scrollY + window.innerHeight / 2;
+    let page = state.currentPage || 1;
+    let bestEl = null;
+    let bestDist = Infinity;
+    for (let i = 1; i <= state.pdfDoc.numPages; i++) {
+      const el = document.getElementById(`page-${i}`);
+      if (!el) continue;
+      const pageCenter = el.offsetTop + el.offsetHeight / 2;
+      const dist = Math.abs(pageCenter - centerY);
+      if (dist < bestDist) {
+        bestDist = dist;
+        page = i;
+        bestEl = el;
+      }
+    }
+    if (!bestEl) return { page, ratio: 0.5 };
+    const ratio = clamp((centerY - bestEl.offsetTop) / Math.max(bestEl.offsetHeight, 1), 0, 1);
+    return { page, ratio };
   }
 
   function restoreViewportAnchor(anchor) {
@@ -402,22 +422,26 @@ input[type="range"] { accent-color: #4ade7f; }
     const el = document.getElementById(`page-${anchor.page}`);
     if (!el) return;
     state.currentPage = anchor.page;
-    window.scrollTo({ top: Math.max(0, el.offsetTop + (anchor.offset || 0)), behavior: "auto" });
+    const ratio = typeof anchor.ratio === "number" ? clamp(anchor.ratio, 0, 1) : 0.5;
+    const targetCenter = el.offsetTop + (el.offsetHeight * ratio);
+    window.scrollTo({ top: Math.max(0, targetCenter - (window.innerHeight / 2)), behavior: "auto" });
   }
 
   async function renderAll() {
     if (!state.pdfDoc) return;
     const token = ++state.renderToken;
     const anchor = getViewportAnchor();
-    container.innerHTML = "";
+    const fragment = document.createDocumentFragment();
 
     for (let i = 1; i <= state.pdfDoc.numPages; i++) {
       if (token !== state.renderToken) return;
       const pageNode = await renderPage(i);
       if (token !== state.renderToken) return;
-      container.appendChild(pageNode);
+      fragment.appendChild(pageNode);
     }
 
+    if (token !== state.renderToken) return;
+    container.replaceChildren(fragment);
     restoreViewportAnchor(anchor);
   }
 
@@ -578,12 +602,20 @@ input[type="range"] { accent-color: #4ade7f; }
       if (e.ctrlKey && e.key === 'o') { const p = state.jumpBack.pop(); if (p) { state.jumpForward.push(state.currentPage); goToPage(p, true, false); } e.preventDefault(); return; }
       if (e.ctrlKey && e.key === 'i') { const p = state.jumpForward.pop(); if (p) { state.jumpBack.push(state.currentPage); goToPage(p, true, false); } e.preventDefault(); return; }
 
-      // rotate (r) and zen toggle (z)
+      // rotate (r), zen toggle (z), and color toggle (c)
       if (e.key === 'r' && !e.ctrlKey) { state.rotation = (state.rotation + 90) % 360; await renderAll(); e.preventDefault(); return; }
       if (e.key === 'z') { state.zenMode = !state.zenMode; updateModeClass(); await renderAll(); e.preventDefault(); return; }
+      if (e.key === 'c') { state.keepImagesColor = !state.keepImagesColor; await renderAll(); e.preventDefault(); return; }
 
       // dual-page mode toggle
-      if (e.key === 'd') { state.dualMode = !state.dualMode; updateModeClass(); await renderAll(); e.preventDefault(); return; }
+      if (e.key === 'd') {
+        const anchor = getViewportAnchor();
+        state.dualMode = !state.dualMode;
+        updateModeClass();
+        restoreViewportAnchor(anchor);
+        e.preventDefault();
+        return;
+      }
 
       // reload
       if (e.key === 'R') { location.reload(); e.preventDefault(); return; }
@@ -591,8 +623,8 @@ input[type="range"] { accent-color: #4ade7f; }
       // fullscreen
       if (e.key === 'F11') { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{}); else document.exitFullscreen().catch(()=>{}); e.preventDefault(); return; }
 
-      // zoom + -
-      if (e.key === '+') { state.scale = Math.min(state.scale * 1.1, 4); await renderAll(); e.preventDefault(); return; }
+      // zoom = -
+      if (e.key === '=') { state.scale = Math.min(state.scale * 1.1, 4); await renderAll(); e.preventDefault(); return; }
       if (e.key === '-') { state.scale = Math.max(state.scale / 1.1, 0.1); await renderAll(); e.preventDefault(); return; }
       if (e.key === '0') { state.scale = 1; await renderAll(); e.preventDefault(); return; }
 
