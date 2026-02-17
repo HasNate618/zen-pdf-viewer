@@ -2,7 +2,7 @@
 
 A lightweight, local PDF.js-based viewer tailored for Omarchy (Hyprland) users. It provides:
 
-- Zathura-style "dark reading" mode (grayscale → invert) that mimics zathura's appearance
+- Zen mode "dark reading" (grayscale → invert) tailored for the Omarchy theme
 - Transparent/pageless rendering so the compositor's blur/desktop background shows through
 - High-DPI canvas rendering for crisp output
 - A selectable text layer (PDF.js text layer) so text can be copied/searched
@@ -25,7 +25,7 @@ Table of contents
 Features
 
 - Pageless, transparent view that takes advantage of Hyprland/Omarchy compositor blur and transparency
-- Zathura-like reading mode (optional) that greyscales and inverts page content while preserving image colors optionally
+- Zen mode (optional) that greyscales and inverts page content while optionally preserving image colors
 - High-resolution rendering using window.devicePixelRatio
 - Selectable text via PDF.js text layer (renderTextLayer)
 - Small launcher (zen-pdf-viewer) which downloads or copies a PDF into a temp dir, starts a local HTTP server bound to 127.0.0.1 and opens the viewer
@@ -53,7 +53,7 @@ How it works (architecture)
 - Rendering pipeline (per page):
   1. PDF.js renders the page to a high-DPI canvas (respecting devicePixelRatio) for sharp output.
   2. The page's text is also rendered into an overlay text layer using PDF.js renderTextLayer so the text is selectable and searchable.
-  3. If Zathura mode is enabled, a post-process pass reads the canvas pixel data and applies a grayscale → invert transform (with a heuristic to preserve colorful image pixels when requested).
+  3. If Zen mode is enabled, a post-process pass reads the canvas pixel data and applies a grayscale → invert transform (with a heuristic to preserve colorful image pixels when requested).
   4. For pageless transparent rendering, the viewer renders page backgrounds as transparent so the compositor shows through.
 
 - The launcher (zen-pdf-viewer) handles local/remote PDFs by copying/downloading the file into a temp directory and serving it via python's http.server on 127.0.0.1. This avoids cross-origin restrictions and allows the viewer to load document data and worker scripts safely.
@@ -73,16 +73,16 @@ The viewer accepts query parameters on the viewer.html URL. The launcher sets sa
 - file: (required) file name on the same server (e.g. doc.pdf)
 - fg: foreground color hex (e.g. %23dcfce7 for #dcfce7)
 - bg: toolbar background (CSS color)
-- zmode: zathura mode (1 = enabled, 0 = disabled)
-- imgcolor: preserve image color when zmode is enabled (1 = keep colors for images, 0 = recolor everything)
+- zen: zen mode (1 = enabled, 0 = disabled)
+- imgcolor: preserve image color when zen is enabled (1 = keep colors for images, 0 = recolor everything)
 
 Example (launcher-generated):
 
-http://127.0.0.1:PORT/viewer.html?file=doc.pdf&fg=%23dcfce7&bg=rgba(18,17,17,0.45)&zmode=1&imgcolor=0
+http://127.0.0.1:PORT/viewer.html?file=doc.pdf&fg=%23dcfce7&bg=rgba(18,17,17,0.45)&zen=1&imgcolor=0
 
 Notes:
-- The launcher sets zmode=1 and imgcolor=0 by default so the viewer opens in Omarchy zathura-like mode.
-- If you disable zmode (zmode=0), the viewer renders pages normally.
+- The launcher sets zen=1 and imgcolor=0 by default so the viewer opens in Omarchy Zen mode.
+- If you disable zen (zen=0), the viewer renders pages normally.
 
 
 Theming & customization
@@ -151,7 +151,7 @@ Contribution
 
 Troubleshooting
 
-- "Blank/black pages": Make sure Zathura mode is pageless and uses transparent background; toggle Zathura mode off to verify the original rendering.
+- "Blank/black pages": Make sure Zen mode is pageless and uses transparent background; toggle Zen mode off to verify the original rendering.
 - "Text not selectable": The text layer relies on PDF.js text extraction. Some PDFs are scanned images (no embedded text) — run OCR if you need selectable text.
 - "Remote PDFs not rendering": The launcher downloads remote PDFs into a temp directory to avoid CORS restrictions. If testing directly, ensure the server supports range requests/CORS or use the launcher script.
 - "Worker fails to load": If the worker is fetched from CDN, a network block or missing worker path will break rendering; vendor the worker to fix offline/packaged setups.

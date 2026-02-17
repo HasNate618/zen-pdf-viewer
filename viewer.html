@@ -13,21 +13,57 @@ html, body {
   color: #dcfce7;
   font-family: "Inter", "JetBrainsMono Nerd Font", sans-serif;
 }
-/* toolbar removed; keyboard-only controls + overlays */
+/* keyboard-only controls + improved overlays */
 #viewerContainer {
   padding: 8px 8px 12px;
 }
 
-#zenToast { position: fixed; bottom: 18px; left: 18px; background: rgba(18,17,17,0.85); color: #dcfce7; padding:8px 10px; border-radius:8px; border:1px solid rgba(220,252,231,0.08); z-index:1000; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); font-size:13px; }
-#zenToast .toast-content { display:flex; gap:8px; align-items:center; }
-#zenToast label { font-size:13px; margin-left:6px; display:flex; align-items:center; gap:6px; }
-#zenToast button { background:transparent; border:1px solid rgba(220,252,231,0.08); color:inherit; padding:4px 6px; border-radius:6px; cursor:pointer; }
+#zenToast {
+  position: fixed;
+  bottom: 22px;
+  left: 22px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(18,17,17,0.88);
+  color: #dcfce7;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(220,252,231,0.06);
+  box-shadow: 0 8px 24px rgba(2,6,23,0.6);
+  z-index: 1000;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  font-size: 13px;
+  max-width: min(420px, calc(100vw - 48px));
+}
+#zenToast .toast-content { display:flex; gap:8px; align-items:center; width:100%; }
+#zenToast .toast-key { background: rgba(255,255,255,0.06); padding: 4px 8px; border-radius:6px; font-weight:600; font-family: monospace; }
+#zenToast .toast-actions { margin-left:auto; display:flex; gap:8px; align-items:center; }
+#zenToast label { font-size:13px; display:flex; align-items:center; gap:6px; color: #cdecd9; }
+#zenToast button { background: transparent; border: 1px solid rgba(220,252,231,0.08); color: inherit; padding:5px 8px; border-radius:8px; cursor:pointer; }
 
 .overlay { position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; background: rgba(0,0,0,0.45); z-index:1001; }
 .overlay[hidden] { display:none; }
-.overlay-inner { background: rgba(18,17,17,0.9); padding: 18px; border-radius: 10px; width: min(900px, 92vw); max-height: 86vh; overflow:auto; border:1px solid rgba(220,252,231,0.08); }
-.overlay h2 { margin-top:0; margin-bottom:8px; }
-#keybindsText { white-space: pre-wrap; font-family: monospace; font-size:13px; color:#dcfce7; }
+.overlay-inner {
+  position: relative;
+  background: rgba(18,17,17,0.95);
+  padding: 10px 12px;
+  border-radius: 12px;
+  width: min(1280px, 97vw);
+  max-height: 94vh;
+  overflow:auto;
+  border:1px solid rgba(220,252,231,0.06);
+  box-shadow: 0 12px 40px rgba(2,6,23,0.6);
+}
+.overlay h2 { margin-top:0; margin-bottom:6px; font-size:15px; }
+.keybinds-table { width: 100%; border-collapse: collapse; border-spacing: 0; table-layout: fixed; }
+.keybinds-table td { padding: 3px 5px; border: none; vertical-align: top; }
+.keybinds-table td.empty { padding: 0; }
+.keybinds-table .keybind-key { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', monospace; font-weight:600; color:#e6fff6; background: rgba(255,255,255,0.03); padding:2px 5px; border-radius:5px; display:inline-block; min-width: 88px; font-size:11px; }
+.keybinds-table .keybind-desc { color: #cfeee0; font-size:11.5px; line-height:1.2; }
+.overlay .close { position:absolute; top:8px; right:8px; background:transparent; color: #cfeee0; border: 0; font-size:20px; cursor:pointer; padding:6px 8px; border-radius:6px; }
+.overlay .close:hover { background: rgba(255,255,255,0.02); }
 
 
 .zen-mode #viewerContainer {
@@ -36,6 +72,15 @@ html, body {
   flex-direction: column;
   gap: 4px;
   align-items: center;
+}
+
+.dual-mode #viewerContainer {
+  padding: 8px 8px 12px;
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  gap: 8px;
+  justify-content: center;
+  align-items: start;
 }
 .pageShell {
   position: relative;
@@ -121,30 +166,30 @@ input[type="range"] { accent-color: #4ade7f; }
   <div class="overlay-inner">
     <button id="keybindsClose" class="close" aria-label="Close">×</button>
     <h2>Zen PDF Viewer — Keybindings</h2>
-    <pre id="keybindsText">Mouse and Key Bindings
-General
-Input 	Description
-J, PgDn 	Go to the next page
-K, PgUp 	Go to the previous page
-h, j, k, l 	Scroll left, down, up or right
-Left, Down, Up, Right 	Scroll left, down, up or right
-^t, ^d, ^u, ^y 	Scroll a half page left, down, up or right
-space, b 	Page down/up
-gg, G, nG 	Goto first, last or nth page
-P 	Snap to the current page (center)
-H, L 	Goto top or bottom of the current page
-^o, ^i 	Move backward and forward through the jump list
-^c, Escape 	Abort/close overlays
-a, s 	Adjust window in best-fit or width mode (a=best-fit, s=fit width)
-/, ? 	Search for text (prompt)
-n, N 	Next/previous search result
-r 	Rotate by 90 degrees
-^r 	Recolor (toggle Zen mode - grayscale/invert)
-R 	Reload document
-F11 	Toggle fullscreen
-+, -, = 	Zoom in, out or to original
-q 	Quit
-</pre>
+    <table id="keybindsText" class="keybinds-table" role="grid" aria-label="Keybindings">
+      <tbody>
+        <tr><td class="keybind-key">J, PgDn</td><td class="keybind-desc">Go to the next page</td></tr>
+        <tr><td class="keybind-key">K, PgUp</td><td class="keybind-desc">Go to the previous page</td></tr>
+        <tr><td class="keybind-key">h, j, k, l</td><td class="keybind-desc">Scroll left, down, up or right</td></tr>
+        <tr><td class="keybind-key">Left, Down, Up, Right</td><td class="keybind-desc">Scroll left, down, up or right</td></tr>
+        <tr><td class="keybind-key">^t, ^d, ^u, ^y</td><td class="keybind-desc">Scroll a half page left, down, up or right</td></tr>
+        <tr><td class="keybind-key">space, b</td><td class="keybind-desc">Page down / page up</td></tr>
+        <tr><td class="keybind-key">gg, G</td><td class="keybind-desc">Goto first or last page</td></tr>
+        <tr><td class="keybind-key">P</td><td class="keybind-desc">Snap to the current page (center)</td></tr>
+        <tr><td class="keybind-key">H, L</td><td class="keybind-desc">Goto top or bottom of the current page</td></tr>
+        <tr><td class="keybind-key">^o, ^i</td><td class="keybind-desc">Move backward and forward through the jump list</td></tr>
+        <tr><td class="keybind-key">Escape</td><td class="keybind-desc">Open/close keybinds viewer</td></tr>
+        <tr><td class="keybind-key">/</td><td class="keybind-desc">Goto page number</td></tr>
+        <tr><td class="keybind-key">r</td><td class="keybind-desc">Rotate by 90 degrees</td></tr>
+        <tr><td class="keybind-key">z</td><td class="keybind-desc">Toggle Zen mode</td></tr>
+        <tr><td class="keybind-key">R</td><td class="keybind-desc">Reload document</td></tr>
+        <tr><td class="keybind-key">d</td><td class="keybind-desc">Toggle dual page view</td></tr>
+        <tr><td class="keybind-key">F11</td><td class="keybind-desc">Toggle fullscreen mode</td></tr>
+        <tr><td class="keybind-key">+, -</td><td class="keybind-desc">Zoom in / out</td></tr>
+        <tr><td class="keybind-key">0</td><td class="keybind-desc">Reset zoom to 100%</td></tr>
+        <tr><td class="keybind-key">q</td><td class="keybind-desc">Quit</td></tr>
+      </tbody>
+    </table>
     <div style="text-align:right; margin-top:8px"><button id="keybindsCloseBtn">Close</button></div>
   </div>
 </div>
@@ -166,6 +211,7 @@ q 	Quit
     pdfDoc: null,
     zenMode: params.get("zen") !== "0",
     keepImagesColor: params.get("imgcolor") === "1",
+    dualMode: params.get("dual") === "1",
     renderToken: 0,
   };
 
@@ -187,8 +233,6 @@ q 	Quit
   state.rotation = 0;
   state.jumpBack = [];
   state.jumpForward = [];
-  state.searchMatches = [];
-  state.searchIndex = -1;
 
   function clamp(v, min, max) {
     return Math.min(max, Math.max(min, v));
@@ -234,6 +278,52 @@ q 	Quit
   function updateModeClass() {
     if (state.zenMode) document.documentElement.classList.add("zen-mode");
     else document.documentElement.classList.remove("zen-mode");
+    if (state.dualMode) document.documentElement.classList.add("dual-mode");
+    else document.documentElement.classList.remove("dual-mode");
+  }
+
+
+  function compactKeybindsTable() {
+    const table = document.getElementById('keybindsText');
+    if (!table || table.dataset.compact === '1') return;
+    const tbody = table.querySelector('tbody');
+    if (!tbody) return;
+    const items = [...tbody.querySelectorAll('tr')]
+      .map((tr) => {
+        const tds = tr.querySelectorAll('td');
+        if (tds.length < 2) return null;
+        return { key: tds[0].textContent.trim(), desc: tds[1].textContent.trim() };
+      })
+      .filter(Boolean);
+
+    tbody.innerHTML = '';
+    for (let i = 0; i < items.length; i += 2) {
+      const a = items[i];
+      const b = items[i + 1] || { key: '', desc: '' };
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="keybind-key">${a.key}</td>
+        <td class="keybind-desc">${a.desc}</td>
+        <td class="keybind-key ${b.key ? '' : 'empty'}">${b.key}</td>
+        <td class="keybind-desc ${b.desc ? '' : 'empty'}">${b.desc}</td>`;
+      tbody.appendChild(tr);
+    }
+    table.dataset.compact = '1';
+  }
+
+  function updateCurrentPageFromScroll() {
+    if (!state.pdfDoc) return;
+    const centerY = window.scrollY + window.innerHeight / 2;
+    let best = state.currentPage || 1;
+    let dist = Infinity;
+    for (let i = 1; i <= state.pdfDoc.numPages; i++) {
+      const el = document.getElementById(`page-${i}`);
+      if (!el) continue;
+      const pageCenter = el.offsetTop + el.offsetHeight / 2;
+      const d = Math.abs(pageCenter - centerY);
+      if (d < dist) { dist = d; best = i; }
+    }
+    state.currentPage = best;
   }
 
   async function renderTextLayer(page, viewport, textLayerDiv) {
@@ -300,9 +390,25 @@ q 	Quit
     return shell;
   }
 
+  function getViewportAnchor() {
+    const page = state.currentPage || 1;
+    const el = document.getElementById(`page-${page}`);
+    if (!el) return { page, offset: 0 };
+    return { page, offset: window.scrollY - el.offsetTop };
+  }
+
+  function restoreViewportAnchor(anchor) {
+    if (!anchor) return;
+    const el = document.getElementById(`page-${anchor.page}`);
+    if (!el) return;
+    state.currentPage = anchor.page;
+    window.scrollTo({ top: Math.max(0, el.offsetTop + (anchor.offset || 0)), behavior: "auto" });
+  }
+
   async function renderAll() {
     if (!state.pdfDoc) return;
     const token = ++state.renderToken;
+    const anchor = getViewportAnchor();
     container.innerHTML = "";
 
     for (let i = 1; i <= state.pdfDoc.numPages; i++) {
@@ -312,16 +418,14 @@ q 	Quit
       container.appendChild(pageNode);
     }
 
-    // reset current page
-    state.currentPage = 1;
+    restoreViewportAnchor(anchor);
   }
 
-  function goToPage(n, smooth = true) {
+  function goToPage(n, smooth = true, recordHistory = true) {
     const pageNo = clamp(Number.parseInt(n, 10) || 1, 1, state.pdfDoc?.numPages || 1);
     const el = document.getElementById(`page-${pageNo}`);
     if (!el) return;
-    // push current page into jump history
-    if (state.currentPage && state.currentPage !== pageNo) {
+    if (recordHistory && state.currentPage && state.currentPage !== pageNo) {
       state.jumpBack.push(state.currentPage);
       state.jumpForward = [];
     }
@@ -330,19 +434,46 @@ q 	Quit
   }
 
   function bindEvents() {
-    // Toast handling
+    // Toast handling (cookie-based so it persists even when localhost port changes)
     try {
       if (zenToast) {
-        const disabled = localStorage.getItem('zen_pdf_toast_disabled') === '1';
-        if (!disabled) zenToast.hidden = false;
+        const getCookie = (name) => {
+          const prefix = `${name}=`;
+          const cookie = document.cookie.split('; ').find((entry) => entry.startsWith(prefix));
+          return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : '';
+        };
+        const disabled = getCookie('zen_pdf_toast_disabled') === '1';
+        if (!disabled) {
+          zenToast.hidden = false;
+          zenToast.style.display = 'flex';
+        }
         const toastCloseBtn = document.getElementById('toastClose');
         const toastDont = document.getElementById('toastDontShow');
-        if (toastCloseBtn) toastCloseBtn.addEventListener('click', () => {
+        const closeToast = () => {
+          if (toastDont && toastDont.checked) {
+            document.cookie = 'zen_pdf_toast_disabled=1; path=/; max-age=31536000; samesite=lax';
+          }
           zenToast.hidden = true;
-          if (toastDont && toastDont.checked) localStorage.setItem('zen_pdf_toast_disabled','1');
-        });
+          zenToast.style.display = 'none';
+        };
+        if (toastCloseBtn) {
+          toastCloseBtn.addEventListener('click', closeToast);
+          toastCloseBtn.addEventListener('pointerup', closeToast);
+        }
       }
     } catch (e) { /* ignore */ }
+
+    compactKeybindsTable();
+
+    // keep current page synced while user scrolls
+    let scrollTimer = null;
+    window.addEventListener('scroll', () => {
+      if (scrollTimer) clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(() => {
+        scrollTimer = null;
+        updateCurrentPageFromScroll();
+      }, 100);
+    }, { passive: true });
 
     // keybinds overlay close
     if (keybindsClose) keybindsClose.addEventListener('click', () => { if (keybindsOverlay) keybindsOverlay.hidden = true; });
@@ -351,9 +482,8 @@ q 	Quit
     // helper functions
     let lastKey = null;
     let lastKeyTime = 0;
-    let numericBuffer = '';
     let seqTimer = null;
-    function setSeqTimer() { if (seqTimer) clearTimeout(seqTimer); seqTimer = setTimeout(() => { numericBuffer=''; lastKey=null; seqTimer=null; }, 800); }
+    function setSeqTimer() { if (seqTimer) clearTimeout(seqTimer); seqTimer = setTimeout(() => { lastKey=null; seqTimer=null; }, 800); }
 
     function snapToNearestPage() {
       const centerY = window.scrollY + window.innerHeight/2;
@@ -368,23 +498,14 @@ q 	Quit
         const d = Math.abs(pageCenter - centerY);
         if (d < bestDist) { bestDist = d; best = i; }
       }
-      goToPage(best);
+      goToPage(best, true, false);
     }
 
-    async function handleSearchPrompt() {
-      const q = prompt('Search for:');
+    async function handleGotoPagePrompt() {
+      const q = prompt('Goto page:');
       if (!q) return;
-      const matches = [];
-      for (let p=1;p<=state.pdfDoc.numPages;p++) {
-        const el = document.getElementById('page-'+p);
-        const textLayer = el ? el.querySelector('.textLayer') : null;
-        const text = textLayer ? textLayer.innerText : '';
-        if (text.toLowerCase().includes(q.toLowerCase())) matches.push(p);
-      }
-      if (matches.length === 0) return;
-      state.searchMatches = matches;
-      state.searchIndex = 0;
-      goToPage(matches[0]);
+      const p = parseInt(q, 10);
+      if (!Number.isNaN(p)) goToPage(p);
     }
 
     document.addEventListener('keydown', async (e) => {
@@ -401,9 +522,6 @@ q 	Quit
         return;
       }
 
-      // numeric buffer
-      if (e.key >= '0' && e.key <= '9') { numericBuffer += e.key; setSeqTimer(); return; }
-
       // gg -> first page
       if (e.key === 'g') {
         const now = Date.now();
@@ -413,10 +531,9 @@ q 	Quit
         return;
       }
 
-      // nG -> goto page n, G -> last page
+      // G -> last page
       if (e.key === 'G') {
-        if (numericBuffer.length > 0) { const p = parseInt(numericBuffer,10); numericBuffer=''; goToPage(p); }
-        else { goToPage(state.pdfDoc.numPages); }
+        goToPage(state.pdfDoc.numPages);
         e.preventDefault();
         return;
       }
@@ -424,6 +541,14 @@ q 	Quit
       // Next/Prev page (uppercase J/K or PgDown/PgUp)
       if (e.key === 'J' || e.key === 'PageDown') { goToPage(state.currentPage + 1); e.preventDefault(); return; }
       if (e.key === 'K' || e.key === 'PageUp') { goToPage(state.currentPage - 1); e.preventDefault(); return; }
+
+      // half-page scrolls with Ctrl (t,d,u,y)
+      const halfY = Math.max(80, Math.floor(window.innerHeight * 0.45));
+      const halfX = Math.max(80, Math.floor(window.innerWidth * 0.35));
+      if (e.ctrlKey && e.key === 'd') { window.scrollBy({ top: halfY, behavior: 'smooth' }); e.preventDefault(); return; }
+      if (e.ctrlKey && e.key === 'u') { window.scrollBy({ top: -halfY, behavior: 'smooth' }); e.preventDefault(); return; }
+      if (e.ctrlKey && e.key === 't') { window.scrollBy({ left: -halfX, behavior: 'smooth' }); e.preventDefault(); return; }
+      if (e.ctrlKey && e.key === 'y') { window.scrollBy({ left: halfX, behavior: 'smooth' }); e.preventDefault(); return; }
 
       // small scrolls (lowercase j/k/h/l)
       const small = Math.max(50, Math.floor(window.innerHeight * 0.12));
@@ -450,12 +575,15 @@ q 	Quit
       if (e.key === 'L') { const el = document.getElementById('page-'+state.currentPage); if (el) window.scrollTo({ top: el.offsetTop + el.offsetHeight - window.innerHeight + 16, behavior: 'smooth' }); e.preventDefault(); return; }
 
       // jump list Ctrl+o / Ctrl+i
-      if (e.ctrlKey && e.key === 'o') { const p = state.jumpBack.pop(); if (p) { state.jumpForward.push(state.currentPage); goToPage(p); } e.preventDefault(); return; }
-      if (e.ctrlKey && e.key === 'i') { const p = state.jumpForward.pop(); if (p) { state.jumpBack.push(state.currentPage); goToPage(p); } e.preventDefault(); return; }
+      if (e.ctrlKey && e.key === 'o') { const p = state.jumpBack.pop(); if (p) { state.jumpForward.push(state.currentPage); goToPage(p, true, false); } e.preventDefault(); return; }
+      if (e.ctrlKey && e.key === 'i') { const p = state.jumpForward.pop(); if (p) { state.jumpBack.push(state.currentPage); goToPage(p, true, false); } e.preventDefault(); return; }
 
-      // rotate (r) and recolor toggle (Ctrl+r)
-      if (e.key === 'r' && !e.ctrlKey) { state.rotation = (state.rotation + 90) % 360; renderAll().then(() => goToPage(state.currentPage,false)); e.preventDefault(); return; }
-      if (e.ctrlKey && e.key === 'r') { state.zenMode = !state.zenMode; updateModeClass(); renderAll(); e.preventDefault(); return; }
+      // rotate (r) and zen toggle (z)
+      if (e.key === 'r' && !e.ctrlKey) { state.rotation = (state.rotation + 90) % 360; await renderAll(); e.preventDefault(); return; }
+      if (e.key === 'z') { state.zenMode = !state.zenMode; updateModeClass(); await renderAll(); e.preventDefault(); return; }
+
+      // dual-page mode toggle
+      if (e.key === 'd') { state.dualMode = !state.dualMode; updateModeClass(); await renderAll(); e.preventDefault(); return; }
 
       // reload
       if (e.key === 'R') { location.reload(); e.preventDefault(); return; }
@@ -463,15 +591,13 @@ q 	Quit
       // fullscreen
       if (e.key === 'F11') { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{}); else document.exitFullscreen().catch(()=>{}); e.preventDefault(); return; }
 
-      // zoom + - =
-      if (e.key === '+' || e.key === '=') { state.scale = Math.min(state.scale * 1.1, 4); renderAll().then(()=>goToPage(state.currentPage,false)); e.preventDefault(); return; }
-      if (e.key === '-') { state.scale = Math.max(state.scale / 1.1, 0.1); renderAll().then(()=>goToPage(state.currentPage,false)); e.preventDefault(); return; }
-      if (e.key === '0') { state.scale = 1; renderAll().then(()=>goToPage(state.currentPage,false)); e.preventDefault(); return; }
+      // zoom + -
+      if (e.key === '+') { state.scale = Math.min(state.scale * 1.1, 4); await renderAll(); e.preventDefault(); return; }
+      if (e.key === '-') { state.scale = Math.max(state.scale / 1.1, 0.1); await renderAll(); e.preventDefault(); return; }
+      if (e.key === '0') { state.scale = 1; await renderAll(); e.preventDefault(); return; }
 
-      // search
-      if (e.key === '/') { handleSearchPrompt(); e.preventDefault(); return; }
-      if (e.key === 'n' && state.searchMatches.length>0) { state.searchIndex = (state.searchIndex+1) % state.searchMatches.length; goToPage(state.searchMatches[state.searchIndex]); e.preventDefault(); return; }
-      if (e.key === 'N' && state.searchMatches.length>0) { state.searchIndex = (state.searchIndex-1+state.searchMatches.length)%state.searchMatches.length; goToPage(state.searchMatches[state.searchIndex]); e.preventDefault(); return; }
+      // goto page prompt
+      if (e.key === '/') { handleGotoPagePrompt(); e.preventDefault(); return; }
 
       // quit
       if (e.key === 'q') { try { window.close(); } catch(err) { location.href='about:blank'; } e.preventDefault(); return; }
