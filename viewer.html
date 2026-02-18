@@ -207,8 +207,8 @@ input[type="range"] { accent-color: #4ade7f; }
   const params = new URLSearchParams(location.search);
   const file = params.get("file") || "";
   const theme = {
-    fg: params.get("fg") || "#dcfce7",
-    toolbarBg: params.get("bg") || "rgba(18,17,17,0.45)",
+    fg: params.get("fg") || "#e6e6e6",
+    toolbarBg: params.get("bg") || "rgba(0,0,0,0.45)",
   };
 
   const state = {
@@ -238,6 +238,7 @@ input[type="range"] { accent-color: #4ade7f; }
   state.rotation = 0;
   state.jumpBack = [];
   state.jumpForward = [];
+  state.pageCache = new Map();
 
   function clamp(v, min, max) {
     return Math.min(max, Math.max(min, v));
@@ -350,8 +351,36 @@ input[type="range"] { accent-color: #4ade7f; }
     }
   }
 
-  async function renderPage(pageNumber) {
+  async function getPdfPage(pageNumber) {
+    if (state.pageCache.has(pageNumber)) return state.pageCache.get(pageNumber);
     const page = await state.pdfDoc.getPage(pageNumber);
+    state.pageCache.set(pageNumber, page);
+    return page;
+  }
+
+  function getOutputScale() {
+    const dpr = Math.max(window.devicePixelRatio || 1, 1);
+    const pages = state.pdfDoc?.numPages || 1;
+    if (pages >= 120) return Math.min(dpr, 1.1);
+    if (pages >= 60) return Math.min(dpr, 1.25);
+    if (pages >= 30) return Math.min(dpr, 1.5);
+    return Math.min(dpr, 2);
+  }
+
+  function buildRenderOrder(total, center) {
+    const order = [center];
+    for (let offset = 1; order.length < total; offset++) {
+      const next = center + offset;
+      const prev = center - offset;
+      if (next <= total) order.push(next);
+      if (prev >= 1) order.push(prev);
+    }
+    return order;
+  }
+
+  async function renderPage(pageNumber) {
+
+    const page = await getPdfPage(pageNumber);
     const viewport = page.getViewport({ scale: state.scale, rotation: (state.rotation || 0) });
 
     const shell = document.createElement("div");
@@ -369,7 +398,7 @@ input[type="range"] { accent-color: #4ade7f; }
     shell.appendChild(canvas);
     shell.appendChild(textLayer);
 
-    const outputScale = Math.max(window.devicePixelRatio || 1, 1);
+    const outputScale = getOutputScale();
     canvas.width = Math.floor(viewport.width * outputScale);
     canvas.height = Math.floor(viewport.height * outputScale);
 
@@ -431,18 +460,39 @@ input[type="range"] { accent-color: #4ade7f; }
     if (!state.pdfDoc) return;
     const token = ++state.renderToken;
     const anchor = getViewportAnchor();
-    const fragment = document.createDocumentFragment();
+    const total = state.pdfDoc.numPages;
+    const center = clamp(anchor?.page || state.currentPage || 1, 1, total);
+    const order = buildRenderOrder(total, center);
+    let anchorRestored = false;
 
-    for (let i = 1; i <= state.pdfDoc.numPages; i++) {
+    for (const pageNo of order) {
       if (token !== state.renderToken) return;
-      const pageNode = await renderPage(i);
+      const pageNode = await renderPage(pageNo);
       if (token !== state.renderToken) return;
-      fragment.appendChild(pageNode);
+
+      const existing = document.getElementById(`page-${pageNo}`);
+      if (existing && existing.parentNode === container) {
+        container.replaceChild(pageNode, existing);
+      } else {
+        let inserted = false;
+        for (let n = pageNo + 1; n <= total; n++) {
+          const next = document.getElementById(`page-${n}`);
+          if (next && next.parentNode === container) {
+            container.insertBefore(pageNode, next);
+            inserted = true;
+            break;
+          }
+        }
+        if (!inserted) container.appendChild(pageNode);
+      }
+
+      if (!anchorRestored && pageNo === center) {
+        restoreViewportAnchor(anchor);
+        anchorRestored = true;
+      }
     }
 
-    if (token !== state.renderToken) return;
-    container.replaceChildren(fragment);
-    restoreViewportAnchor(anchor);
+    if (!anchorRestored) restoreViewportAnchor(anchor);
   }
 
   function goToPage(n, smooth = true, recordHistory = true) {
@@ -462,20 +512,24 @@ input[type="range"] { accent-color: #4ade7f; }
     try {
       if (zenToast) {
         const getCookie = (name) => {
+          if (!document.cookie) return '';
           const prefix = `${name}=`;
-          const cookie = document.cookie.split('; ').find((entry) => entry.startsWith(prefix));
+          const cookie = document.cookie.split(';').map(c => c.trim()).find((entry) => entry.startsWith(prefix));
           return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : '';
         };
         const disabled = getCookie('zen_pdf_toast_disabled') === '1';
         if (!disabled) {
           zenToast.hidden = false;
           zenToast.style.display = 'flex';
+        } else {
+          zenToast.hidden = true;
+          zenToast.style.display = 'none';
         }
         const toastCloseBtn = document.getElementById('toastClose');
         const toastDont = document.getElementById('toastDontShow');
         const closeToast = () => {
           if (toastDont && toastDont.checked) {
-            document.cookie = 'zen_pdf_toast_disabled=1; path=/; max-age=31536000; samesite=lax';
+            try { document.cookie = 'zen_pdf_toast_disabled=1; path=/; max-age=31536000;'; } catch(e) { /* ignore */ }
           }
           zenToast.hidden = true;
           zenToast.style.display = 'none';
@@ -656,7 +710,7 @@ input[type="range"] { accent-color: #4ade7f; }
       // Auto-scale to cover viewport on first load so PDF fills the window (may crop).
       async function adjustScaleToCover() {
         try {
-          const firstPage = await state.pdfDoc.getPage(1);
+          const firstPage = await getPdfPage(1);
           const vp = firstPage.getViewport({ scale: 1 });
           const toolbarH = 0;
           const pad = 16;
@@ -666,10 +720,13 @@ input[type="range"] { accent-color: #4ade7f; }
           const scaleY = availableH / vp.height;
           // Cover (may crop) so the page fills viewport.
           const coverScale = Math.max(scaleX, scaleY);
+          const prevScale = state.scale;
           state.scale = Math.max(coverScale, 0.1);
           if (zoomInput) zoomInput.value = clamp(Math.round(state.scale * 100), 50, 250);
+          return Math.abs(prevScale - state.scale) > 0.01;
         } catch (e) {
           // keep default scale
+          return false;
         }
       }
 
@@ -683,7 +740,7 @@ input[type="range"] { accent-color: #4ade7f; }
 
       // Initial adjust and set resize handler to auto-fill on window changes.
       await adjustScaleToCover();
-      const onResize = debounce(async () => { await adjustScaleToCover(); await renderAll(); }, 150);
+      const onResize = debounce(async () => { const changed = await adjustScaleToCover(); if (changed) await renderAll(); }, 180);
       window.addEventListener('resize', onResize);
 
       await renderAll();
