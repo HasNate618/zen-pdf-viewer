@@ -1,12 +1,12 @@
-# Zen PDF viewer (Omarchy theme)
+# Zen PDF Viewer
 
-A lightweight, local PDF.js-based viewer tailored for Omarchy (Hyprland) users. It provides:
+A lightweight, local PDF.js-based viewer focused on a minimal, keyboard-first reading experience. It provides:
 
-- Zen mode "dark reading" (grayscale → invert) tailored for the Omarchy theme
-- Transparent/pageless rendering so the compositor's blur/desktop background shows through
+- Zen mode "dark reading" (grayscale → invert)
+- Transparent/pageless rendering (compositors with blur/transparency may improve appearance)
 - High-DPI canvas rendering for crisp output
 - A selectable text layer (PDF.js text layer) so text can be copied/searched
-- A tiny launcher script (zen-pdf-viewer) that serves PDFs from a temp directory and opens the viewer in your default Zen browser profile
+- A small launcher script (zen-pdf-viewer) that serves PDFs from a temp directory and opens the viewer in your default browser (Zen Browser recommended for best transparency integration)
 
 Table of contents
 - Features
@@ -24,7 +24,7 @@ Table of contents
 
 Features
 
-- Pageless, transparent view that takes advantage of Hyprland/Omarchy compositor blur and transparency
+- Pageless, transparent rendering; compositors with blur/transparency (e.g., Hyprland) can improve appearance
 - Zen mode (optional) that greyscales and inverts page content while optionally preserving image colors
 - High-resolution rendering using window.devicePixelRatio
 - Selectable text via PDF.js text layer (renderTextLayer)
@@ -60,7 +60,7 @@ How it works (architecture)
 
 Files & layout
 
-- viewer.html — The PDF.js based Omarchy viewer (main UI and rendering logic).
+- viewer.html — The PDF.js-based viewer (main UI and rendering logic).
 - zen-pdf-viewer — A small shell launcher script that prepares a temp dir, serves it, and opens the viewer URL in the default browser.
 - README.md — This documentation.
 - .git/ — (optional) repository for sharing and versioning.
@@ -78,10 +78,10 @@ The viewer accepts query parameters on the viewer.html URL. The launcher sets sa
 
 Example (launcher-generated):
 
-http://127.0.0.1:PORT/viewer.html?file=doc.pdf&fg=%23dcfce7&bg=rgba(18,17,17,0.45)&zen=1&imgcolor=0
+http://127.0.0.1:PORT/viewer.html?file=doc.pdf&zen=1&imgcolor=0
 
 Notes:
-- The launcher sets zen=1 and imgcolor=0 by default so the viewer opens in Omarchy Zen mode.
+- The launcher sets zen=1 and imgcolor=0 by default (Zen mode enabled).
 - If you disable zen (zen=0), the viewer renders pages normally.
 
 
@@ -115,7 +115,7 @@ Categories=Utility;
 3. For browsers that embed PDF viewers (Chrome/Chromium/Zen Browser), set the browser to open PDFs externally (so they open in the system default):
 
 - For Chromium/Chrome-like browsers: set the profile pref `plugins.always_open_pdf_externally = true` (in profile prefs) or disable the built-in PDF viewer from the UI.
-- For Zen Browser specifically, ensure the profile's handlers.json or prefs instructs opening PDFs externally (the launcher edits these when requested).
+- For Zen Browser (optional), you may configure profile handlers to open PDFs externally; the launcher can assist but this is optional.
 
 
 Development & testing
@@ -135,8 +135,9 @@ Development & testing
      and change the script source to the local file.
 
 - Performance:
-  - The viewer uses devicePixelRatio to render crisp pages. For very large pages or files, memory usage may be high.
-  - Consider reducing default scale or enabling streaming in PDF.js options for very large documents.
+  - The viewer now prioritizes rerendering around the current page first, so zoom/resize updates become visible sooner on large PDFs.
+  - Rendering quality is adaptive for large documents (output scale is capped) to reduce CPU/GPU and memory pressure.
+  - Very large PDFs can still be expensive, especially with Zen mode filtering enabled on high-resolution pages.
 
 
 Contribution
@@ -172,7 +173,7 @@ This repository does not include an explicit license file by default. Add a LICE
 Contact / Credits
 
 - Author: your user account
-- Built/iterated using Omarchy skill helper and helper scripts.
+- Built and iterated locally.
 
 
 -- end --
