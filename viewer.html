@@ -12,10 +12,14 @@ html, body {
   background: transparent;
   color: #dcfce7;
   font-family: "Inter", "JetBrainsMono Nerd Font", sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
 }
 /* keyboard-only controls + improved overlays */
 #viewerContainer {
   padding: 8px 8px 12px;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 #zenToast {
@@ -50,22 +54,22 @@ html, body {
   background: rgba(18,17,17,0.95);
   padding: 10px 12px;
   border-radius: 12px;
-  width: min(1280px, 97vw);
+  width: min(960px, 92vw);
   max-height: 94vh;
   overflow:auto;
   border:1px solid rgba(220,252,231,0.06);
   box-shadow: 0 12px 40px rgba(2,6,23,0.6);
 }
 .overlay h2 { margin-top:0; margin-bottom:6px; font-size:15px; }
-.keybinds-table { width: 100%; border-collapse: collapse; border-spacing: 0; table-layout: auto; }
-.keybinds-table td { padding: 3px 5px; border: none; vertical-align: top; }
+.keybinds-table { width: 100%; border-collapse: collapse; border-spacing: 0; table-layout: fixed; }
+.keybinds-table td { padding: 3px 3px; border: none; vertical-align: top; }
 .keybinds-table td:nth-child(1),
-.keybinds-table td:nth-child(3) { white-space: nowrap; padding-right: 2px; }
+.keybinds-table td:nth-child(3) { width: 17%; white-space: nowrap; padding-right: 3px; }
 .keybinds-table td:nth-child(2),
-.keybinds-table td:nth-child(4) { padding-left: 2px; }
+.keybinds-table td:nth-child(4) { width: 33%; padding-left: 3px; }
 .keybinds-table td.empty { padding: 0; }
-.keybinds-table .keybind-key { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', monospace; font-weight:600; color:#e6fff6; font-size:11px; white-space: nowrap; }
-.keybinds-table .keybind-desc { color: #cfeee0; font-size:11.5px; line-height:1.2; }
+.keybinds-table .keybind-key { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', monospace; font-weight:600; color:#e6fff6; font-size:12.5px; white-space: nowrap; }
+.keybinds-table .keybind-desc { color: #cfeee0; font-size:12.5px; line-height:1.25; }
 .overlay .close { position:absolute; top:8px; right:8px; background:transparent; color: #cfeee0; border: 0; font-size:20px; cursor:pointer; padding:6px 8px; border-radius:6px; }
 .overlay .close:hover { background: rgba(255,255,255,0.02); }
 
@@ -81,10 +85,16 @@ html, body {
 .dual-mode #viewerContainer {
   padding: 8px 8px 12px;
   display: grid;
-  grid-template-columns: repeat(2, max-content);
+  grid-template-columns: repeat(2, minmax(0, max-content));
   gap: 8px;
   justify-content: center;
+  justify-items: center;
   align-items: start;
+  width: 100%;
+}
+
+.dual-mode .pageShell {
+  margin: 0;
 }
 .pageShell {
   position: relative;
@@ -112,6 +122,8 @@ html, body {
   line-height: 1;
   text-size-adjust: none;
   forced-color-adjust: none;
+  user-select: text;
+  -webkit-user-select: text;
 }
 .textLayer span,
 .textLayer br {
@@ -120,6 +132,8 @@ html, body {
   white-space: pre;
   cursor: text;
   transform-origin: 0% 0%;
+  user-select: text;
+  -webkit-user-select: text;
 }
 .textLayer ::selection { background: rgba(74, 222, 127, 0.35); }
 button,
@@ -378,6 +392,35 @@ input[type="range"] { accent-color: #4ade7f; }
     return order;
   }
 
+  async function adjustScaleToMode() {
+    if (!state.pdfDoc) return false;
+    try {
+      const firstPage = await getPdfPage(1);
+      const vp = firstPage.getViewport({ scale: 1, rotation: (state.rotation || 0) });
+      const pad = 16;
+      const availableW = Math.max(100, window.innerWidth - pad);
+      const availableH = Math.max(100, window.innerHeight - pad);
+      let nextScale;
+
+      if (state.dualMode) {
+        const gap = 8;
+        const totalWidth = (vp.width * 2) + gap;
+        nextScale = availableW / Math.max(totalWidth, 1);
+      } else {
+        const scaleX = availableW / vp.width;
+        const scaleY = availableH / vp.height;
+        nextScale = Math.max(scaleX, scaleY);
+      }
+
+      const prevScale = state.scale;
+      state.scale = Math.max(nextScale, 0.1);
+      if (zoomInput) zoomInput.value = clamp(Math.round(state.scale * 100), 50, 250);
+      return Math.abs(prevScale - state.scale) > 0.01;
+    } catch (e) {
+      return false;
+    }
+  }
+
   async function renderPage(pageNumber) {
 
     const page = await getPdfPage(pageNumber);
@@ -563,6 +606,164 @@ input[type="range"] { accent-color: #4ade7f; }
     let seqTimer = null;
     function setSeqTimer() { if (seqTimer) clearTimeout(seqTimer); seqTimer = setTimeout(() => { lastKey=null; seqTimer=null; }, 800); }
 
+    // Improved selection handling: when dragging selection off-text, keep the last valid caret
+    // so the selection endpoint doesn't jump back to the start of the document.
+    let isPointerSelecting = false;
+    let selectionAnchorRange = null;
+    let lastValidCaretRange = null;
+    let lastVisibleSelectionRange = null;
+    let activePointerId = null;
+    let activePointerTarget = null;
+
+    function caretRangeFromPoint(x, y) {
+      if (document.caretRangeFromPoint) return document.caretRangeFromPoint(x, y);
+      if (document.caretPositionFromPoint) {
+        const pos = document.caretPositionFromPoint(x, y);
+        if (!pos) return null;
+        const r = document.createRange();
+        r.setStart(pos.offsetNode, pos.offset);
+        r.setEnd(pos.offsetNode, pos.offset);
+        return r;
+      }
+      return null;
+    }
+
+    function nodeIsInTextLayer(node) {
+      if (!node) return false;
+      const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+      return !!(el && el.closest && el.closest('.textLayer'));
+    }
+
+    function rangeIsInTextLayer(r) {
+      if (!r) return false;
+      return nodeIsInTextLayer(r.startContainer) && nodeIsInTextLayer(r.endContainer);
+    }
+
+    function eventTargetIsInTextLayer(target) {
+      if (!target) return false;
+      const el = target.nodeType === Node.TEXT_NODE ? target.parentElement : target;
+      return !!(el && el.closest && el.closest('.textLayer'));
+    }
+
+    function cloneCollapsedRange(r) {
+      if (!r) return null;
+      const c = r.cloneRange ? r.cloneRange() : r;
+      c.collapse(true);
+      return c;
+    }
+
+    function restoreLastVisibleSelection() {
+      if (!lastVisibleSelectionRange) return false;
+      const sel = window.getSelection();
+      if (!sel) return false;
+      sel.removeAllRanges();
+      sel.addRange(lastVisibleSelectionRange.cloneRange ? lastVisibleSelectionRange.cloneRange() : lastVisibleSelectionRange);
+      return true;
+    }
+
+    function applyPointerSelection(anchorRange, focusRange) {
+      if (!anchorRange || !focusRange) return false;
+      const anchorNode = anchorRange.startContainer;
+      const focusNode = focusRange.startContainer;
+      if (!anchorNode || !focusNode || !anchorNode.isConnected || !focusNode.isConnected) return false;
+      const sel = window.getSelection();
+      if (!sel) return false;
+      sel.removeAllRanges();
+      if (sel.setBaseAndExtent) {
+        sel.setBaseAndExtent(anchorNode, anchorRange.startOffset, focusNode, focusRange.startOffset);
+      } else {
+        const newRange = document.createRange();
+        if (anchorRange.compareBoundaryPoints(Range.START_TO_START, focusRange) <= 0) {
+          newRange.setStart(anchorNode, anchorRange.startOffset);
+          newRange.setEnd(focusNode, focusRange.startOffset);
+        } else {
+          newRange.setStart(focusNode, focusRange.startOffset);
+          newRange.setEnd(anchorNode, anchorRange.startOffset);
+        }
+        sel.addRange(newRange);
+      }
+      if (sel.rangeCount > 0) {
+        const current = sel.getRangeAt(0);
+        lastVisibleSelectionRange = current.cloneRange ? current.cloneRange() : current;
+      }
+      return true;
+    }
+
+    document.addEventListener('selectstart', (ev) => {
+      if (eventTargetIsInTextLayer(ev.target)) return;
+      if (isPointerSelecting) restoreLastVisibleSelection();
+      ev.preventDefault();
+    }, true);
+
+    // Capture pointer-based selection start inside the textLayer
+    document.addEventListener('pointerdown', (ev) => {
+      if (ev.button !== 0) return;
+      try {
+        const r = caretRangeFromPoint(ev.clientX, ev.clientY);
+        if (!r || !rangeIsInTextLayer(r)) return;
+        isPointerSelecting = true;
+        selectionAnchorRange = cloneCollapsedRange(r);
+        lastValidCaretRange = cloneCollapsedRange(r);
+        lastVisibleSelectionRange = null;
+        activePointerId = ev.pointerId ?? null;
+        activePointerTarget = ev.target || null;
+        if (activePointerTarget && activePointerTarget.setPointerCapture && activePointerId !== null) {
+          try { activePointerTarget.setPointerCapture(activePointerId); } catch (e) { /* ignore */ }
+        }
+        applyPointerSelection(selectionAnchorRange, lastValidCaretRange);
+        ev.preventDefault();
+      } catch(e) { /* ignore */ }
+    }, true);
+
+    // During pointer moves, keep the latest valid text endpoint and preserve visible selection
+    // while dragging over non-text areas.
+    document.addEventListener('pointermove', (ev) => {
+      if (!isPointerSelecting) return;
+      try {
+        let focusRange = caretRangeFromPoint(ev.clientX, ev.clientY);
+        if (focusRange && rangeIsInTextLayer(focusRange)) {
+          lastValidCaretRange = cloneCollapsedRange(focusRange);
+        } else {
+          focusRange = lastValidCaretRange;
+        }
+        if (!selectionAnchorRange || !focusRange) {
+          if (restoreLastVisibleSelection()) ev.preventDefault();
+          return;
+        }
+        if (!applyPointerSelection(selectionAnchorRange, focusRange)) {
+          if (restoreLastVisibleSelection()) ev.preventDefault();
+          return;
+        }
+        ev.preventDefault();
+      } catch (e) { /* ignore */ }
+    }, true);
+
+    document.addEventListener('pointerup', () => {
+      if (isPointerSelecting) {
+        if (activePointerTarget && activePointerTarget.releasePointerCapture && activePointerId !== null) {
+          try { activePointerTarget.releasePointerCapture(activePointerId); } catch (e) { /* ignore */ }
+        }
+        isPointerSelecting = false;
+        selectionAnchorRange = null;
+        lastValidCaretRange = null;
+        lastVisibleSelectionRange = null;
+        activePointerId = null;
+        activePointerTarget = null;
+      }
+    }, true);
+
+    document.addEventListener('pointercancel', () => {
+      if (activePointerTarget && activePointerTarget.releasePointerCapture && activePointerId !== null) {
+        try { activePointerTarget.releasePointerCapture(activePointerId); } catch (e) { /* ignore */ }
+      }
+      isPointerSelecting = false;
+      selectionAnchorRange = null;
+      lastValidCaretRange = null;
+      lastVisibleSelectionRange = null;
+      activePointerId = null;
+      activePointerTarget = null;
+    }, true);
+
     function snapToNearestPage() {
       const centerY = window.scrollY + window.innerHeight/2;
       let best = 1;
@@ -666,6 +867,8 @@ input[type="range"] { accent-color: #4ade7f; }
         const anchor = getViewportAnchor();
         state.dualMode = !state.dualMode;
         updateModeClass();
+        await adjustScaleToMode();
+        await renderAll();
         restoreViewportAnchor(anchor);
         e.preventDefault();
         return;
@@ -707,28 +910,6 @@ input[type="range"] { accent-color: #4ade7f; }
       }).promise;
 
       bindEvents();
-      // Auto-scale to cover viewport on first load so PDF fills the window (may crop).
-      async function adjustScaleToCover() {
-        try {
-          const firstPage = await getPdfPage(1);
-          const vp = firstPage.getViewport({ scale: 1 });
-          const toolbarH = 0;
-          const pad = 16;
-          const availableW = Math.max(100, window.innerWidth - pad);
-          const availableH = Math.max(100, window.innerHeight - toolbarH - pad);
-          const scaleX = availableW / vp.width;
-          const scaleY = availableH / vp.height;
-          // Cover (may crop) so the page fills viewport.
-          const coverScale = Math.max(scaleX, scaleY);
-          const prevScale = state.scale;
-          state.scale = Math.max(coverScale, 0.1);
-          if (zoomInput) zoomInput.value = clamp(Math.round(state.scale * 100), 50, 250);
-          return Math.abs(prevScale - state.scale) > 0.01;
-        } catch (e) {
-          // keep default scale
-          return false;
-        }
-      }
 
       function debounce(fn, wait) {
         let t = null;
@@ -739,8 +920,8 @@ input[type="range"] { accent-color: #4ade7f; }
       }
 
       // Initial adjust and set resize handler to auto-fill on window changes.
-      await adjustScaleToCover();
-      const onResize = debounce(async () => { const changed = await adjustScaleToCover(); if (changed) await renderAll(); }, 180);
+      await adjustScaleToMode();
+      const onResize = debounce(async () => { const changed = await adjustScaleToMode(); if (changed) await renderAll(); }, 180);
       window.addEventListener('resize', onResize);
 
       await renderAll();
