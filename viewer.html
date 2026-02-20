@@ -51,25 +51,25 @@ html, body {
 .overlay[hidden] { display:none; }
 .overlay-inner {
   position: relative;
-  background: rgba(18,17,17,0.95);
-  padding: 10px 12px;
+  background: rgba(10,10,10,0.98);
+  padding: 16px 20px;
   border-radius: 12px;
-  width: min(960px, 92vw);
+  width: min(520px, 92vw);
   max-height: 94vh;
   overflow:auto;
   border:1px solid rgba(220,252,231,0.06);
   box-shadow: 0 12px 40px rgba(2,6,23,0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
-.overlay h2 { margin-top:0; margin-bottom:6px; font-size:15px; }
-.keybinds-table { width: 100%; border-collapse: collapse; border-spacing: 0; table-layout: fixed; }
-.keybinds-table td { padding: 3px 3px; border: none; vertical-align: top; }
-.keybinds-table td:nth-child(1),
-.keybinds-table td:nth-child(3) { width: 17%; white-space: nowrap; padding-right: 3px; }
-.keybinds-table td:nth-child(2),
-.keybinds-table td:nth-child(4) { width: 33%; padding-left: 3px; }
+.overlay h2 { margin-top:0; margin-bottom:12px; font-size:16px; }
+.keybinds-table { width: 100%; border-collapse: collapse; border-spacing: 0; }
+.keybinds-table td { padding: 6px 4px; border: none; vertical-align: top; }
+.keybinds-table td:nth-child(1) { width: 28%; white-space: nowrap; padding-right: 12px; }
+.keybinds-table td:nth-child(2) { width: 72%; padding-left: 0; }
 .keybinds-table td.empty { padding: 0; }
-.keybinds-table .keybind-key { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', monospace; font-weight:600; color:#e6fff6; font-size:12.5px; white-space: nowrap; }
-.keybinds-table .keybind-desc { color: #cfeee0; font-size:12.5px; line-height:1.25; }
+.keybinds-table .keybind-key { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', monospace; font-weight:600; color:#e6fff6; font-size:14px; white-space: nowrap; }
+.keybinds-table .keybind-desc { color: #cfeee0; font-size:14px; line-height:1.35; }
 .overlay .close { position:absolute; top:8px; right:8px; background:transparent; color: #cfeee0; border: 0; font-size:20px; cursor:pointer; padding:6px 8px; border-radius:6px; }
 .overlay .close:hover { background: rgba(255,255,255,0.02); }
 
@@ -317,15 +317,12 @@ input[type="range"] { accent-color: #4ade7f; }
       .filter(Boolean);
 
     tbody.innerHTML = '';
-    for (let i = 0; i < items.length; i += 2) {
+    for (let i = 0; i < items.length; i++) {
       const a = items[i];
-      const b = items[i + 1] || { key: '', desc: '' };
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td class="keybind-key">${a.key}</td>
-        <td class="keybind-desc">${a.desc}</td>
-        <td class="keybind-key ${b.key ? '' : 'empty'}">${b.key}</td>
-        <td class="keybind-desc ${b.desc ? '' : 'empty'}">${b.desc}</td>`;
+        <td class="keybind-desc">${a.desc}</td>`;
       tbody.appendChild(tr);
     }
     table.dataset.compact = '1';
