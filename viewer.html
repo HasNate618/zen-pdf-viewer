@@ -74,7 +74,7 @@ html, body {
 .overlay .close:hover { background: rgba(255,255,255,0.02); }
 
 
-.zen-mode #viewerContainer {
+.pageless #viewerContainer {
   padding: 8px 0 54px;
   display: flex;
   flex-direction: column;
@@ -104,7 +104,7 @@ html, body {
   background: transparent;
 }
 
-.zen-mode .pageShell {
+.pageless .pageShell {
   margin: 0;
   border-radius: 0;
 }
@@ -203,6 +203,7 @@ input[type="range"] { accent-color: #4ade7f; }
         <tr><td class="keybind-key">c</td><td class="keybind-desc">Toggle color in Zen mode</td></tr>
         <tr><td class="keybind-key">R</td><td class="keybind-desc">Reload document</td></tr>
         <tr><td class="keybind-key">d</td><td class="keybind-desc">Toggle dual page view</td></tr>
+        <tr><td class="keybind-key">p</td><td class="keybind-desc">Toggle pageless & compression</td></tr>
         <tr><td class="keybind-key">F11</td><td class="keybind-desc">Toggle fullscreen mode</td></tr>
         <tr><td class="keybind-key">=, -</td><td class="keybind-desc">Zoom in / out</td></tr>
         <tr><td class="keybind-key">0</td><td class="keybind-desc">Reset zoom to 100%</td></tr>
@@ -231,6 +232,8 @@ input[type="range"] { accent-color: #4ade7f; }
     zenMode: params.get("zen") !== "0",
     keepImagesColor: params.get("imgcolor") === "1",
     dualMode: params.get("dual") === "1",
+    pageless: params.get("pageless") === "1",
+    compress: false,
     renderToken: 0,
   };
 
@@ -296,8 +299,8 @@ input[type="range"] { accent-color: #4ade7f; }
   }
 
   function updateModeClass() {
-    if (state.zenMode) document.documentElement.classList.add("zen-mode");
-    else document.documentElement.classList.remove("zen-mode");
+    if (state.pageless) document.documentElement.classList.add("pageless");
+    else document.documentElement.classList.remove("pageless");
     if (state.dualMode) document.documentElement.classList.add("dual-mode");
     else document.documentElement.classList.remove("dual-mode");
   }
@@ -370,6 +373,7 @@ input[type="range"] { accent-color: #4ade7f; }
   }
 
   function getOutputScale() {
+    if (state.compress) return 1;
     const dpr = Math.max(window.devicePixelRatio || 1, 1);
     const pages = state.pdfDoc?.numPages || 1;
     if (pages >= 120) return Math.min(dpr, 1.1);
@@ -450,7 +454,7 @@ input[type="range"] { accent-color: #4ade7f; }
     const renderParams = {
       canvasContext: ctx,
       viewport,
-      background: state.zenMode ? "rgba(0,0,0,0)" : "rgb(255,255,255)",
+      background: state.pageless ? "rgba(0,0,0,0)" : "rgb(255,255,255)",
       transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null,
     };
 
@@ -865,6 +869,18 @@ input[type="range"] { accent-color: #4ade7f; }
         state.dualMode = !state.dualMode;
         updateModeClass();
         await adjustScaleToMode();
+        await renderAll();
+        restoreViewportAnchor(anchor);
+        e.preventDefault();
+        return;
+      }
+
+      // pageless & compression toggle
+      if (e.key === 'p') {
+        const anchor = getViewportAnchor();
+        state.pageless = !state.pageless;
+        state.compress = !state.compress;
+        updateModeClass();
         await renderAll();
         restoreViewportAnchor(anchor);
         e.preventDefault();
