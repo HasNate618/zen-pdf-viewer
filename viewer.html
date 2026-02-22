@@ -288,7 +288,15 @@ input[type="range"] { accent-color: #4ade7f; }
       const gray = 0.299 * r + 0.587 * g + 0.114 * b;
       const inv = 255 - gray;
       if (inv < 4 && chroma < 6) {
-        d[i + 3] = 0;
+        if (state.pageless) {
+          d[i + 3] = 0;
+        } else {
+          const pageShade = 18;
+          d[i] = pageShade;
+          d[i + 1] = pageShade;
+          d[i + 2] = pageShade;
+          d[i + 3] = 255;
+        }
         continue;
       }
       d[i] = inv;
