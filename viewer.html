@@ -934,6 +934,20 @@ input[type="range"] { accent-color: #4ade7f; }
         withCredentials: false,
       }).promise;
 
+      // Set the document title to the PDF title metadata if present, otherwise use the filename
+      try {
+        const meta = await state.pdfDoc.getMetadata();
+        if (meta && meta.info && meta.info.Title) {
+          document.title = meta.info.Title;
+        } else if (file) {
+          try { document.title = decodeURIComponent(String(file).split('/').pop()); } catch (e) { document.title = String(file).split('/').pop(); }
+        }
+      } catch (e) {
+        if (file) {
+          try { document.title = decodeURIComponent(String(file).split('/').pop()); } catch (e) { document.title = String(file).split('/').pop(); }
+        }
+      }
+
       bindEvents();
 
       function debounce(fn, wait) {
