@@ -47,30 +47,34 @@ html, body {
 #zenToast label { font-size:13px; display:flex; align-items:center; gap:6px; color: #cdecd9; }
 #zenToast button { background: transparent; border: 1px solid rgba(220,252,231,0.08); color: inherit; padding:5px 8px; border-radius:8px; cursor:pointer; }
 
-.overlay { position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; background: rgba(0,0,0,0.45); z-index:1001; }
+.overlay { position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; background: rgba(18,18,20,0.45); z-index:1001; }
 .overlay[hidden] { display:none; }
 .overlay-inner {
   position: relative;
-  background: rgba(10,10,10,0.98);
-  padding: 16px 20px;
-  border-radius: 12px;
-  width: min(520px, 92vw);
-  max-height: 94vh;
+  background: rgba(30,30,35,0.85);
+  color: inherit;
+  padding: 20px 24px;
+  border-radius: 14px;
+  width: min(640px, 96vw);
+  max-height: 88vh;
   overflow:auto;
-  border:1px solid rgba(220,252,231,0.06);
-  box-shadow: 0 12px 40px rgba(2,6,23,0.6);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  border:1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 10px 30px rgba(2,6,23,0.55);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
 }
-.overlay h2 { margin-top:0; margin-bottom:12px; font-size:16px; }
-.keybinds-table { width: 100%; border-collapse: collapse; border-spacing: 0; }
-.keybinds-table td { padding: 6px 4px; border: none; vertical-align: top; }
-.keybinds-table td:nth-child(1) { width: 28%; white-space: nowrap; padding-right: 12px; }
-.keybinds-table td:nth-child(2) { width: 72%; padding-left: 0; }
+.overlay h2 { margin-top:0; margin-bottom:12px; font-size:18px; font-weight:600; color: #f1f5f9; }
+.keybinds-table { width: 100%; border-collapse: collapse; border-spacing: 0; table-layout: auto; }
+.keybinds-table td { padding: 10px 8px; border: none; vertical-align: top; }
+.keybinds-table td:nth-child(1) { width: 1%; white-space: nowrap; padding-right: 16px; }
+.keybinds-table td:nth-child(2) { padding-left: 0; }
 .keybinds-table td.empty { padding: 0; }
-.keybinds-table .keybind-key { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', monospace; font-weight:600; color:#e6fff6; font-size:14px; white-space: nowrap; }
-.keybinds-table .keybind-desc { color: #cfeee0; font-size:14px; line-height:1.35; }
-.overlay .close { position:absolute; top:8px; right:8px; background:transparent; color: #cfeee0; border: 0; font-size:20px; cursor:pointer; padding:6px 8px; border-radius:6px; }
+.keybinds-table .keybind-key { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', monospace; font-weight:700; color:#ffffff; font-size:15px; white-space: nowrap; background: rgba(255,255,255,0.04); padding: 6px 10px; border-radius:8px; display:inline-block; }
+.keybinds-table .keybind-desc { color: #e6eef0; font-size:15px; line-height:1.45; }
+.overlay .close { position:absolute; top:8px; right:8px; background:transparent; color: #e6eef0; border: 0; font-size:20px; cursor:pointer; padding:6px 8px; border-radius:6px; }
+.keybinds-table .keybind-desc { opacity: 0.95; }
+.keybinds-table tr + tr { border-top: 1px solid rgba(255,255,255,0.03); }
 .overlay .close:hover { background: rgba(255,255,255,0.02); }
 
 
@@ -183,7 +187,7 @@ input[type="range"] { accent-color: #4ade7f; }
 <div id="keybindsOverlay" class="overlay" hidden>
   <div class="overlay-inner">
     <button id="keybindsClose" class="close" aria-label="Close">×</button>
-    <h2>Zen PDF Viewer — Keybindings</h2>
+    <h2>Keybindings</h2>
     <table id="keybindsText" class="keybinds-table" role="grid" aria-label="Keybindings">
       <tbody>
         <tr><td class="keybind-key">J, PgDn</td><td class="keybind-desc">Go to the next page</td></tr>
@@ -232,7 +236,7 @@ input[type="range"] { accent-color: #4ade7f; }
     zenMode: params.get("zen") !== "0",
     keepImagesColor: params.get("imgcolor") === "1",
     dualMode: params.get("dual") === "1",
-    pageless: params.get("pageless") === "1",
+    pageless: (params.get("pageless") !== null) ? (params.get("pageless") === "1") : (params.get("zen") !== "0"),
     compress: false,
     renderToken: 0,
   };
