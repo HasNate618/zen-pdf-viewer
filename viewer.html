@@ -230,6 +230,14 @@ input[type="range"] { accent-color: #4ade7f; }
     toolbarBg: params.get("bg") || "rgba(0,0,0,0.45)",
   };
 
+  const perf = {
+    renderBehind: 2,
+    renderAhead: 4,
+    maxCachePages: 12,
+    largeDocPages: 120,
+    largeDocMaxDpr: 1.1,
+  };
+
   const state = {
     scale: 1,
     pdfDoc: null,
@@ -260,6 +268,13 @@ input[type="range"] { accent-color: #4ade7f; }
   state.jumpBack = [];
   state.jumpForward = [];
   state.pageCache = new Map();
+  state.pageSizes = new Map();
+  state.renderedPages = new Set();
+  state.visiblePages = new Map();
+  state.renderPending = false;
+  state.pageObserver = null;
+  state.baseViewport = null;
+  state.largeDoc = false;
 
   function clamp(v, min, max) {
     return Math.min(max, Math.max(min, v));
@@ -345,6 +360,18 @@ input[type="range"] { accent-color: #4ade7f; }
 
   function updateCurrentPageFromScroll() {
     if (!state.pdfDoc) return;
+    if (state.visiblePages.size > 0) {
+      let best = state.currentPage || 1;
+      let bestRatio = -1;
+      for (const [pageNo, ratio] of state.visiblePages.entries()) {
+        if (ratio > bestRatio) {
+          bestRatio = ratio;
+          best = pageNo;
+        }
+      }
+      state.currentPage = best;
+      return;
+    }
     const centerY = window.scrollY + window.innerHeight / 2;
     let best = state.currentPage || 1;
     let dist = Infinity;
@@ -378,9 +405,18 @@ input[type="range"] { accent-color: #4ade7f; }
   }
 
   async function getPdfPage(pageNumber) {
-    if (state.pageCache.has(pageNumber)) return state.pageCache.get(pageNumber);
+    if (state.pageCache.has(pageNumber)) {
+      const cached = state.pageCache.get(pageNumber);
+      state.pageCache.delete(pageNumber);
+      state.pageCache.set(pageNumber, cached);
+      return cached;
+    }
     const page = await state.pdfDoc.getPage(pageNumber);
     state.pageCache.set(pageNumber, page);
+    if (state.pageCache.size > perf.maxCachePages) {
+      const firstKey = state.pageCache.keys().next().value;
+      if (firstKey) state.pageCache.delete(firstKey);
+    }
     return page;
   }
 
@@ -388,6 +424,7 @@ input[type="range"] { accent-color: #4ade7f; }
     if (state.compress) return 1;
     const dpr = Math.max(window.devicePixelRatio || 1, 1);
     const pages = state.pdfDoc?.numPages || 1;
+    if (state.largeDoc) return Math.min(dpr, perf.largeDocMaxDpr);
     if (pages >= 120) return Math.min(dpr, 1.1);
     if (pages >= 60) return Math.min(dpr, 1.25);
     if (pages >= 30) return Math.min(dpr, 1.5);
@@ -434,10 +471,31 @@ input[type="range"] { accent-color: #4ade7f; }
     }
   }
 
-  async function renderPage(pageNumber) {
+  function getEstimatedPageSize() {
+    const base = state.baseViewport;
+    const baseWidth = base ? base.width : 612;
+    const baseHeight = base ? base.height : 792;
+    const rotated = (state.rotation || 0) % 180 !== 0;
+    const w = rotated ? baseHeight : baseWidth;
+    const h = rotated ? baseWidth : baseHeight;
+    return { width: w * state.scale, height: h * state.scale };
+  }
 
+  function createPlaceholder(pageNumber) {
+    const shell = document.createElement("div");
+    shell.className = "pageShell";
+    shell.id = `page-${pageNumber}`;
+    shell.dataset.placeholder = "1";
+    const size = state.pageSizes.get(pageNumber) || getEstimatedPageSize();
+    shell.style.width = `${size.width}px`;
+    shell.style.height = `${size.height}px`;
+    return shell;
+  }
+
+  async function renderPage(pageNumber) {
     const page = await getPdfPage(pageNumber);
     const viewport = page.getViewport({ scale: state.scale, rotation: (state.rotation || 0) });
+    state.pageSizes.set(pageNumber, { width: viewport.width, height: viewport.height });
 
     const shell = document.createElement("div");
     shell.className = "pageShell";
@@ -512,43 +570,110 @@ input[type="range"] { accent-color: #4ade7f; }
     window.scrollTo({ top: Math.max(0, targetCenter - (window.innerHeight / 2)), behavior: "auto" });
   }
 
-  async function renderAll() {
+  function replaceWithPlaceholder(pageNumber) {
+    const existing = document.getElementById(`page-${pageNumber}`);
+    if (!existing || existing.parentNode !== container) return;
+    const placeholder = createPlaceholder(pageNumber);
+    container.replaceChild(placeholder, existing);
+    if (state.pageObserver) state.pageObserver.observe(placeholder);
+    state.renderedPages.delete(pageNumber);
+  }
+
+  function buildPlaceholders() {
+    container.innerHTML = "";
+    state.renderedPages.clear();
+    state.visiblePages.clear();
+    const total = state.pdfDoc?.numPages || 0;
+    const frag = document.createDocumentFragment();
+    for (let i = 1; i <= total; i++) {
+      frag.appendChild(createPlaceholder(i));
+    }
+    container.appendChild(frag);
+  }
+
+  function scheduleRenderWindow() {
+    if (state.renderPending) return;
+    state.renderPending = true;
+    requestAnimationFrame(() => {
+      state.renderPending = false;
+      renderWindow();
+    });
+  }
+
+  async function renderWindow() {
     if (!state.pdfDoc) return;
     const token = ++state.renderToken;
-    const anchor = getViewportAnchor();
     const total = state.pdfDoc.numPages;
-    const center = clamp(anchor?.page || state.currentPage || 1, 1, total);
-    const order = buildRenderOrder(total, center);
-    let anchorRestored = false;
+    const center = clamp(state.currentPage || 1, 1, total);
+    const start = clamp(center - perf.renderBehind, 1, total);
+    const end = clamp(center + perf.renderAhead, 1, total);
+    const order = buildRenderOrder(end - start + 1, center - start + 1)
+      .map((idx) => idx + start - 1);
 
     for (const pageNo of order) {
       if (token !== state.renderToken) return;
+      if (state.renderedPages.has(pageNo)) continue;
       const pageNode = await renderPage(pageNo);
       if (token !== state.renderToken) return;
-
       const existing = document.getElementById(`page-${pageNo}`);
       if (existing && existing.parentNode === container) {
         container.replaceChild(pageNode, existing);
-      } else {
-        let inserted = false;
-        for (let n = pageNo + 1; n <= total; n++) {
-          const next = document.getElementById(`page-${n}`);
-          if (next && next.parentNode === container) {
-            container.insertBefore(pageNode, next);
-            inserted = true;
-            break;
-          }
-        }
-        if (!inserted) container.appendChild(pageNode);
       }
-
-      if (!anchorRestored && pageNo === center) {
-        restoreViewportAnchor(anchor);
-        anchorRestored = true;
-      }
+      if (state.pageObserver) state.pageObserver.observe(pageNode);
+      state.renderedPages.add(pageNo);
     }
 
-    if (!anchorRestored) restoreViewportAnchor(anchor);
+    for (const pageNo of Array.from(state.renderedPages)) {
+      if (pageNo < start || pageNo > end) {
+        replaceWithPlaceholder(pageNo);
+      }
+    }
+  }
+
+  function initPageObserver() {
+    if (!state.pdfDoc) return;
+    if (state.pageObserver) {
+      state.pageObserver.disconnect();
+      state.pageObserver = null;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const target = entry.target;
+        if (!target || !target.id) continue;
+        const pageNo = Number.parseInt(target.id.replace("page-", ""), 10);
+        if (!pageNo) continue;
+        if (entry.isIntersecting) {
+          state.visiblePages.set(pageNo, entry.intersectionRatio || 0);
+        } else {
+          state.visiblePages.delete(pageNo);
+        }
+      }
+      updateCurrentPageFromScroll();
+      scheduleRenderWindow();
+    }, {
+      root: null,
+      rootMargin: "200px 0px",
+      threshold: [0, 0.15, 0.35, 0.6, 0.9],
+    });
+
+    const total = state.pdfDoc.numPages;
+    for (let i = 1; i <= total; i++) {
+      const el = document.getElementById(`page-${i}`);
+      if (el) observer.observe(el);
+    }
+    state.pageObserver = observer;
+  }
+
+  async function resetAndRender() {
+    if (!state.pdfDoc) return;
+    const anchor = getViewportAnchor();
+    state.pageSizes.clear();
+    state.renderedPages.clear();
+    state.visiblePages.clear();
+    buildPlaceholders();
+    initPageObserver();
+    restoreViewportAnchor(anchor);
+    scheduleRenderWindow();
   }
 
   function goToPage(n, smooth = true, recordHistory = true) {
@@ -606,7 +731,8 @@ input[type="range"] { accent-color: #4ade7f; }
       scrollTimer = setTimeout(() => {
         scrollTimer = null;
         updateCurrentPageFromScroll();
-      }, 100);
+        scheduleRenderWindow();
+      }, 120);
     }, { passive: true });
 
     // keybinds overlay close
@@ -777,7 +903,19 @@ input[type="range"] { accent-color: #4ade7f; }
       activePointerTarget = null;
     }, true);
 
-    function snapToNearestPage() {
+  function snapToNearestPage() {
+      if (state.visiblePages.size > 0) {
+        let best = state.currentPage || 1;
+        let bestRatio = -1;
+        for (const [pageNo, ratio] of state.visiblePages.entries()) {
+          if (ratio > bestRatio) {
+            bestRatio = ratio;
+            best = pageNo;
+          }
+        }
+        goToPage(best, true, false);
+        return;
+      }
       const centerY = window.scrollY + window.innerHeight/2;
       let best = 1;
       let bestDist = Infinity;
@@ -871,9 +1009,9 @@ input[type="range"] { accent-color: #4ade7f; }
       if (e.ctrlKey && e.key === 'i') { const p = state.jumpForward.pop(); if (p) { state.jumpBack.push(state.currentPage); goToPage(p, true, false); } e.preventDefault(); return; }
 
       // rotate (r), zen toggle (z), and color toggle (c)
-      if (e.key === 'r' && !e.ctrlKey) { state.rotation = (state.rotation + 90) % 360; await renderAll(); e.preventDefault(); return; }
-      if (e.key === 'z') { state.zenMode = !state.zenMode; updateModeClass(); await renderAll(); e.preventDefault(); return; }
-      if (e.key === 'c') { state.keepImagesColor = !state.keepImagesColor; await renderAll(); e.preventDefault(); return; }
+       if (e.key === 'r' && !e.ctrlKey) { state.rotation = (state.rotation + 90) % 360; await resetAndRender(); e.preventDefault(); return; }
+       if (e.key === 'z') { state.zenMode = !state.zenMode; updateModeClass(); await resetAndRender(); e.preventDefault(); return; }
+       if (e.key === 'c') { state.keepImagesColor = !state.keepImagesColor; await resetAndRender(); e.preventDefault(); return; }
 
       // dual-page mode toggle
       if (e.key === 'd') {
@@ -881,11 +1019,11 @@ input[type="range"] { accent-color: #4ade7f; }
         state.dualMode = !state.dualMode;
         updateModeClass();
         await adjustScaleToMode();
-        await renderAll();
-        restoreViewportAnchor(anchor);
-        e.preventDefault();
-        return;
-      }
+         await resetAndRender();
+         restoreViewportAnchor(anchor);
+         e.preventDefault();
+         return;
+       }
 
       // pageless & compression toggle
       if (e.key === 'p') {
@@ -893,11 +1031,11 @@ input[type="range"] { accent-color: #4ade7f; }
         state.pageless = !state.pageless;
         state.compress = !state.compress;
         updateModeClass();
-        await renderAll();
-        restoreViewportAnchor(anchor);
-        e.preventDefault();
-        return;
-      }
+         await resetAndRender();
+         restoreViewportAnchor(anchor);
+         e.preventDefault();
+         return;
+       }
 
       // reload
       if (e.key === 'R') { location.reload(); e.preventDefault(); return; }
@@ -906,9 +1044,9 @@ input[type="range"] { accent-color: #4ade7f; }
       if (e.key === 'F11') { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{}); else document.exitFullscreen().catch(()=>{}); e.preventDefault(); return; }
 
       // zoom = -
-      if (e.key === '=') { state.scale = Math.min(state.scale * 1.1, 4); await renderAll(); e.preventDefault(); return; }
-      if (e.key === '-') { state.scale = Math.max(state.scale / 1.1, 0.1); await renderAll(); e.preventDefault(); return; }
-      if (e.key === '0') { state.scale = 1; await renderAll(); e.preventDefault(); return; }
+       if (e.key === '=') { state.scale = Math.min(state.scale * 1.1, 4); await resetAndRender(); e.preventDefault(); return; }
+       if (e.key === '-') { state.scale = Math.max(state.scale / 1.1, 0.1); await resetAndRender(); e.preventDefault(); return; }
+       if (e.key === '0') { state.scale = 1; await resetAndRender(); e.preventDefault(); return; }
 
       // goto page prompt
       if (e.key === '/') { handleGotoPagePrompt(); e.preventDefault(); return; }
@@ -933,6 +1071,14 @@ input[type="range"] { accent-color: #4ade7f; }
         url: file,
         withCredentials: false,
       }).promise;
+
+    state.largeDoc = state.pdfDoc.numPages >= perf.largeDocPages;
+    if (state.largeDoc) {
+      state.compress = true;
+      perf.renderBehind = Math.min(perf.renderBehind, 1);
+      perf.renderAhead = Math.min(perf.renderAhead, 2);
+      perf.maxCachePages = Math.min(perf.maxCachePages, 8);
+    }
 
       // Set the document title to the PDF title metadata if present, otherwise use the filename
       try {
@@ -959,11 +1105,15 @@ input[type="range"] { accent-color: #4ade7f; }
       }
 
       // Initial adjust and set resize handler to auto-fill on window changes.
+      const firstPage = await getPdfPage(1);
+      state.baseViewport = firstPage.getViewport({ scale: 1, rotation: 0 });
       await adjustScaleToMode();
-      const onResize = debounce(async () => { const changed = await adjustScaleToMode(); if (changed) await renderAll(); }, 180);
+      const onResize = debounce(async () => { const changed = await adjustScaleToMode(); if (changed) await resetAndRender(); }, 180);
       window.addEventListener('resize', onResize);
 
-      await renderAll();
+      buildPlaceholders();
+      initPageObserver();
+      scheduleRenderWindow();
     } catch (err) {
       showError(`Could not render PDF: ${err?.message || err}`);
       console.error(err);
