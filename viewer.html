@@ -952,6 +952,12 @@ input[type="range"] { accent-color: #4ade7f; }
         return;
       }
 
+      const keyLower = typeof e.key === 'string' ? e.key.toLowerCase() : '';
+      const allowCtrlShortcut = e.ctrlKey && !e.altKey && !e.metaKey && ['d', 'u', 't', 'y', 'o', 'i'].includes(keyLower);
+      if ((e.ctrlKey || e.altKey || e.metaKey) && !allowCtrlShortcut) {
+        return;
+      }
+
       // gg -> first page
       if (e.key === 'g') {
         const now = Date.now();
@@ -975,10 +981,10 @@ input[type="range"] { accent-color: #4ade7f; }
       // half-page scrolls with Ctrl (t,d,u,y)
       const halfY = Math.max(80, Math.floor(window.innerHeight * 0.45));
       const halfX = Math.max(80, Math.floor(window.innerWidth * 0.35));
-      if (e.ctrlKey && e.key === 'd') { window.scrollBy({ top: halfY, behavior: 'smooth' }); e.preventDefault(); return; }
-      if (e.ctrlKey && e.key === 'u') { window.scrollBy({ top: -halfY, behavior: 'smooth' }); e.preventDefault(); return; }
-      if (e.ctrlKey && e.key === 't') { window.scrollBy({ left: -halfX, behavior: 'smooth' }); e.preventDefault(); return; }
-      if (e.ctrlKey && e.key === 'y') { window.scrollBy({ left: halfX, behavior: 'smooth' }); e.preventDefault(); return; }
+      if (e.ctrlKey && keyLower === 'd') { window.scrollBy({ top: halfY, behavior: 'smooth' }); e.preventDefault(); return; }
+      if (e.ctrlKey && keyLower === 'u') { window.scrollBy({ top: -halfY, behavior: 'smooth' }); e.preventDefault(); return; }
+      if (e.ctrlKey && keyLower === 't') { window.scrollBy({ left: -halfX, behavior: 'smooth' }); e.preventDefault(); return; }
+      if (e.ctrlKey && keyLower === 'y') { window.scrollBy({ left: halfX, behavior: 'smooth' }); e.preventDefault(); return; }
 
       // small scrolls (lowercase j/k/h/l)
       const small = Math.max(50, Math.floor(window.innerHeight * 0.12));
@@ -1005,8 +1011,8 @@ input[type="range"] { accent-color: #4ade7f; }
       if (e.key === 'L') { const el = document.getElementById('page-'+state.currentPage); if (el) window.scrollTo({ top: el.offsetTop + el.offsetHeight - window.innerHeight + 16, behavior: 'smooth' }); e.preventDefault(); return; }
 
       // jump list Ctrl+o / Ctrl+i
-      if (e.ctrlKey && e.key === 'o') { const p = state.jumpBack.pop(); if (p) { state.jumpForward.push(state.currentPage); goToPage(p, true, false); } e.preventDefault(); return; }
-      if (e.ctrlKey && e.key === 'i') { const p = state.jumpForward.pop(); if (p) { state.jumpBack.push(state.currentPage); goToPage(p, true, false); } e.preventDefault(); return; }
+      if (e.ctrlKey && keyLower === 'o') { const p = state.jumpBack.pop(); if (p) { state.jumpForward.push(state.currentPage); goToPage(p, true, false); } e.preventDefault(); return; }
+      if (e.ctrlKey && keyLower === 'i') { const p = state.jumpForward.pop(); if (p) { state.jumpBack.push(state.currentPage); goToPage(p, true, false); } e.preventDefault(); return; }
 
       // rotate (r), zen toggle (z), and color toggle (c)
        if (e.key === 'r' && !e.ctrlKey) { state.rotation = (state.rotation + 90) % 360; await resetAndRender(); e.preventDefault(); return; }
