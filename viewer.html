@@ -69,8 +69,19 @@ html, body {
   }
 }
 
-.overlay { position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; background: rgba(18,18,20,0.45); z-index:1001; padding: clamp(8px, 3vw, 40px); box-sizing: border-box; }
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.overlay { position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; background: rgba(18,18,20,0.45); z-index:1001; padding: clamp(8px, 3vw, 40px); box-sizing: border-box; animation: fadeIn 0.25s ease-out; }
 .overlay[hidden] { display:none; }
+.overlay.closing { animation: fadeOut 0.15s ease-out forwards; }
 .overlay-inner {
   position: relative;
   background: rgba(30,30,35,0.85);
@@ -747,16 +758,19 @@ input[type="range"] { accent-color: #4ade7f; }
     function openKeybinds() {
       if (!keybindsOverlay) return;
       const inner = keybindsOverlay.querySelector('.overlay-inner');
+      keybindsOverlay.classList.remove('closing');
       if (inner) inner.classList.remove('closing');
       keybindsOverlay.hidden = false;
     }
     function closeKeybinds() {
       if (!keybindsOverlay || keybindsOverlay.hidden) return;
       const inner = keybindsOverlay.querySelector('.overlay-inner');
+      keybindsOverlay.classList.add('closing');
+      if (inner) inner.classList.add('closing');
       if (!inner) { keybindsOverlay.hidden = true; return; }
-      inner.classList.add('closing');
       inner.addEventListener('animationend', () => {
         inner.classList.remove('closing');
+        keybindsOverlay.classList.remove('closing');
         keybindsOverlay.hidden = true;
       }, { once: true });
     }
