@@ -1,5 +1,11 @@
 # Zen PDF Viewer
 
+<p align="center">
+  <img src="Media/screenshot.png" alt="Zen mode screenshot" width="900" />
+</p>
+
+**Zen mode — comfortable dark reading with transparent, pageless rendering.**
+
 A lightweight, keyboard-first PDF viewer built on PDF.js. It runs entirely in your browser via a tiny local HTTP server — no Electron, no native app, no install wizard. One HTML file plus a launcher script is all it takes.
 
 - **Zen mode** — grayscale + invert for comfortable dark reading, with optional image-color preservation
