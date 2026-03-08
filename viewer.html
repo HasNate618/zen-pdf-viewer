@@ -211,6 +211,10 @@ input[type="range"] { accent-color: #4ade7f; }
     <div style="text-align:right; margin-top:8px"><button id="keybindsCloseBtn">Close</button></div>
   </div>
 </div>
+<div id="gotoPageBar" hidden style="position:fixed; top:0; left:0; right:0; background:rgba(30,30,35,0.95); padding:8px 16px; display:flex; align-items:center; gap:8px; z-index:1000; backdrop-filter:blur(8px);">
+  <label style="color:#ccc; font-size:12px; margin:0;">Goto page:</label>
+  <input id="gotoPageInput" type="text" style="background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); color:#fff; padding:4px 8px; border-radius:4px; width:80px; font-size:13px;" placeholder="page #">
+</div>
 <div id="error"></div>
 <div id="viewerContainer"></div>
 
@@ -251,6 +255,8 @@ input[type="range"] { accent-color: #4ade7f; }
   const keybindsText = document.getElementById("keybindsText");
   const keybindsClose = document.getElementById("keybindsClose");
   const keybindsCloseBtn = document.getElementById("keybindsCloseBtn");
+  const gotoPageBar = document.getElementById("gotoPageBar");
+  const gotoPageInput = document.getElementById("gotoPageInput");
 
   // Apply theme and initial mode
   if (document.body) document.body.style.color = theme.fg;
@@ -723,6 +729,14 @@ input[type="range"] { accent-color: #4ade7f; }
     if (keybindsClose) keybindsClose.addEventListener('click', () => { if (keybindsOverlay) keybindsOverlay.hidden = true; });
     if (keybindsCloseBtn) keybindsCloseBtn.addEventListener('click', () => { if (keybindsOverlay) keybindsOverlay.hidden = true; });
 
+    // goto page bar handlers
+    if (gotoPageInput) {
+      gotoPageInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { finishGotoPage(); e.preventDefault(); }
+        else if (e.key === 'Escape') { if (gotoPageBar) gotoPageBar.hidden = true; e.preventDefault(); }
+      });
+    }
+
     // helper functions
     let lastKey = null;
     let lastKeyTime = 0;
@@ -916,10 +930,20 @@ input[type="range"] { accent-color: #4ade7f; }
     }
 
     async function handleGotoPagePrompt() {
-      const q = prompt('Goto page:');
-      if (!q) return;
-      const p = parseInt(q, 10);
-      if (!Number.isNaN(p)) goToPage(p);
+      if (gotoPageBar && gotoPageInput) {
+        gotoPageBar.hidden = false;
+        gotoPageInput.value = '';
+        gotoPageInput.focus();
+      }
+    }
+
+    function finishGotoPage() {
+      if (gotoPageBar) gotoPageBar.hidden = true;
+      if (gotoPageInput) {
+        const p = parseInt(gotoPageInput.value, 10);
+        if (!Number.isNaN(p)) goToPage(p);
+        gotoPageInput.value = '';
+      }
     }
 
     document.addEventListener('keydown', async (e) => {
