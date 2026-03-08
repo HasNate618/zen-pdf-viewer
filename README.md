@@ -1,7 +1,7 @@
 # Zen PDF Viewer
 
 <p align="center">
-  <img src="Media/screenshot.png" alt="Zen mode screenshot" width="900" />
+  <img src="Media/screenshot.png" alt="Zen mode screenshot" width="500" />
 </p>
 
 **Zen mode — comfortable dark reading with transparent, pageless rendering.**
