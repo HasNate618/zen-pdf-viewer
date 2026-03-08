@@ -70,7 +70,8 @@ html, body {
 .keybinds-table td:nth-child(1) { width: 1%; white-space: nowrap; padding-right: 16px; }
 .keybinds-table td:nth-child(2) { padding-left: 0; }
 .keybinds-table td.empty { padding: 0; }
-.keybinds-table .keybind-key { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', monospace; font-weight:700; color:#ffffff; font-size:15px; white-space: nowrap; background: rgba(255,255,255,0.04); padding: 6px 10px; border-radius:8px; display:inline-block; }
+.keybinds-table .keybind-key { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 6px 16px 6px 0; }
+.keycap { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', monospace; font-weight: 700; color: #fff; font-size: 13px; background: rgba(255,255,255,0.09); border: 1px solid rgba(255,255,255,0.14); padding: 3px 8px; border-radius: 6px; display: inline-block; white-space: nowrap; }
 .keybinds-table .keybind-desc { color: #e6eef0; font-size:15px; line-height:1.45; }
 .overlay .close { position:absolute; top:8px; right:8px; background:transparent; color: #e6eef0; border: 0; font-size:20px; cursor:pointer; padding:6px 8px; border-radius:6px; }
 .keybinds-table .keybind-desc { opacity: 0.95; }
@@ -346,12 +347,16 @@ input[type="range"] { accent-color: #4ade7f; }
       })
       .filter(Boolean);
 
+    function keysToHtml(keyStr) {
+      return keyStr.split(/,\s+/).map(k => `<kbd class="keycap">${k.trim()}</kbd>`).join('');
+    }
+
     tbody.innerHTML = '';
     for (let i = 0; i < items.length; i++) {
       const a = items[i];
       const tr = document.createElement('tr');
       tr.innerHTML = `
-        <td class="keybind-key">${a.key}</td>
+        <td class="keybind-key">${keysToHtml(a.key)}</td>
         <td class="keybind-desc">${a.desc}</td>`;
       tbody.appendChild(tr);
     }
