@@ -47,7 +47,7 @@ html, body {
 #zenToast label { font-size:13px; display:flex; align-items:center; gap:6px; color: #cdecd9; }
 #zenToast button { background: transparent; border: 1px solid rgba(220,252,231,0.08); color: inherit; padding:5px 8px; border-radius:8px; cursor:pointer; }
 
-.overlay { position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; background: rgba(18,18,20,0.45); z-index:1001; }
+.overlay { position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; background: rgba(18,18,20,0.45); z-index:1001; padding: clamp(8px, 3vw, 40px); box-sizing: border-box; }
 .overlay[hidden] { display:none; }
 .overlay-inner {
   position: relative;
@@ -55,7 +55,7 @@ html, body {
   color: inherit;
   padding: 20px 24px;
   border-radius: 14px;
-  width: min(1100px, 96vw);
+  width: min(1100px, 100%);
   max-height: 88vh;
   overflow:auto;
   border:1px solid rgba(255,255,255,0.08);
@@ -66,9 +66,17 @@ html, body {
 }
 .overlay h2 { margin-top:0; margin-bottom:12px; font-size:18px; font-weight:600; color: #f1f5f9; }
 .keybinds-grid { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 0 20px; width: 100%; }
+@media (max-width: 640px) {
+  .keybinds-grid { grid-template-columns: auto 1fr; }
+  /* In single-column mode every key+desc pair is row n; remove border only from first row */
+  .keybinds-grid > .keybind-key { border-top: 1px solid rgba(255,255,255,0.03); }
+  .keybinds-grid > .keybind-desc { border-top: 1px solid rgba(255,255,255,0.03); }
+  .keybinds-grid > .keybind-key:first-child { border-top: none; }
+  .keybinds-grid > .keybind-desc:nth-child(2) { border-top: none; }
+}
 .keybind-key { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 7px 8px 7px 0; border-top: 1px solid rgba(255,255,255,0.03); }
 .keybind-key:nth-child(4n+1), .keybind-key:nth-child(4n+2) { border-top: none; }
-/* Remove top border from first two real columns of each pair */
+/* Remove top border from first four children (first row) */
 .keybinds-grid > .keybind-key:nth-child(-n+4) { border-top: none; }
 .keybind-desc { color: #e6eef0; font-size:14px; line-height:1.45; opacity:0.95; padding: 7px 8px 7px 0; border-top: 1px solid rgba(255,255,255,0.03); display: flex; align-items: center; }
 .keybinds-grid > .keybind-desc:nth-child(-n+4) { border-top: none; }
