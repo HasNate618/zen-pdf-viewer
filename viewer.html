@@ -55,7 +55,7 @@ html, body {
   color: inherit;
   padding: 20px 24px;
   border-radius: 14px;
-  width: min(640px, 96vw);
+  width: min(1100px, 96vw);
   max-height: 88vh;
   overflow:auto;
   border:1px solid rgba(255,255,255,0.08);
@@ -65,18 +65,16 @@ html, body {
   font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
 }
 .overlay h2 { margin-top:0; margin-bottom:12px; font-size:18px; font-weight:600; color: #f1f5f9; }
-.keybinds-table { width: 100%; border-collapse: collapse; border-spacing: 0; table-layout: auto; }
-.keybinds-table td { padding: 10px 8px; border: none; vertical-align: top; }
-.keybinds-table td:nth-child(1) { width: 1%; white-space: nowrap; padding-right: 16px; }
-.keybinds-table td:nth-child(2) { padding-left: 0; }
-.keybinds-table td.empty { padding: 0; }
-.keybinds-table .keybind-key { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 6px 16px 6px 0; }
+.keybinds-grid { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 0 20px; width: 100%; }
+.keybind-key { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 7px 8px 7px 0; border-top: 1px solid rgba(255,255,255,0.03); }
+.keybind-key:nth-child(4n+1), .keybind-key:nth-child(4n+2) { border-top: none; }
+/* Remove top border from first two real columns of each pair */
+.keybinds-grid > .keybind-key:nth-child(-n+4) { border-top: none; }
+.keybind-desc { color: #e6eef0; font-size:14px; line-height:1.45; opacity:0.95; padding: 7px 8px 7px 0; border-top: 1px solid rgba(255,255,255,0.03); display: flex; align-items: center; }
+.keybinds-grid > .keybind-desc:nth-child(-n+4) { border-top: none; }
 .keycap { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', monospace; font-weight: 700; color: #fff; font-size: 13px; background: rgba(255,255,255,0.09); border: 1px solid rgba(255,255,255,0.14); padding: 3px 8px; border-radius: 6px; display: inline-block; white-space: nowrap; }
-.keybinds-table .keybind-desc { color: #e6eef0; font-size:15px; line-height:1.45; }
 .overlay .close { position:absolute; top:8px; right:8px; background:transparent; color: #e6eef0; border: 0; font-size:20px; cursor:pointer; padding:6px 8px; border-radius:6px; }
-.keybinds-table .keybind-desc { opacity: 0.95; }
-.keybinds-table tr + tr { border-top: 1px solid rgba(255,255,255,0.03); }
-.overlay .close:hover { background: rgba(255,255,255,0.02); }
+.overlay .close:hover { background: rgba(255,255,255,0.05); }
 
 
 .pageless #viewerContainer {
@@ -189,32 +187,19 @@ input[type="range"] { accent-color: #4ade7f; }
   <div class="overlay-inner">
     <button id="keybindsClose" class="close" aria-label="Close">×</button>
     <h2>Keybindings</h2>
-    <table id="keybindsText" class="keybinds-table" role="grid" aria-label="Keybindings">
-      <tbody>
-        <tr><td class="keybind-key">J, PgDn</td><td class="keybind-desc">Go to the next page</td></tr>
-        <tr><td class="keybind-key">K, PgUp</td><td class="keybind-desc">Go to the previous page</td></tr>
-        <tr><td class="keybind-key">h, j, k, l</td><td class="keybind-desc">Scroll left, down, up or right</td></tr>
-        <tr><td class="keybind-key">Left, Down, Up, Right</td><td class="keybind-desc">Scroll left, down, up or right</td></tr>
-        <tr><td class="keybind-key">^t, ^d, ^u, ^y</td><td class="keybind-desc">Scroll a half page left, down, up or right</td></tr>
-        <tr><td class="keybind-key">space, b</td><td class="keybind-desc">Page down / page up</td></tr>
-        <tr><td class="keybind-key">gg, G</td><td class="keybind-desc">Goto first or last page</td></tr>
-        <tr><td class="keybind-key">P</td><td class="keybind-desc">Snap to the current page (center)</td></tr>
-        <tr><td class="keybind-key">H, L</td><td class="keybind-desc">Goto top or bottom of the current page</td></tr>
-        <tr><td class="keybind-key">^o, ^i</td><td class="keybind-desc">Move backward and forward through the jump list</td></tr>
-        <tr><td class="keybind-key">Escape</td><td class="keybind-desc">Open/close keybinds viewer</td></tr>
-        <tr><td class="keybind-key">/</td><td class="keybind-desc">Goto page number</td></tr>
-        <tr><td class="keybind-key">r</td><td class="keybind-desc">Rotate by 90 degrees</td></tr>
-        <tr><td class="keybind-key">z</td><td class="keybind-desc">Toggle Zen mode</td></tr>
-        <tr><td class="keybind-key">c</td><td class="keybind-desc">Toggle color in Zen mode</td></tr>
-        <tr><td class="keybind-key">R</td><td class="keybind-desc">Reload document</td></tr>
-        <tr><td class="keybind-key">d</td><td class="keybind-desc">Toggle dual page view</td></tr>
-        <tr><td class="keybind-key">p</td><td class="keybind-desc">Toggle pageless & compression</td></tr>
-        <tr><td class="keybind-key">F11</td><td class="keybind-desc">Toggle fullscreen mode</td></tr>
-        <tr><td class="keybind-key">=, -</td><td class="keybind-desc">Zoom in / out</td></tr>
-        <tr><td class="keybind-key">0</td><td class="keybind-desc">Reset zoom to 100%</td></tr>
-        <tr><td class="keybind-key">q</td><td class="keybind-desc">Quit</td></tr>
-      </tbody>
-    </table>
+    <div id="keybindsText" class="keybinds-grid" role="grid" aria-label="Keybindings">
+      <div class="keybind-key">J, PgDn</div><div class="keybind-desc">Go to the next page</div><div class="keybind-key">K, PgUp</div><div class="keybind-desc">Go to the previous page</div>
+      <div class="keybind-key">h, j, k, l</div><div class="keybind-desc">Scroll left, down, up or right</div><div class="keybind-key">Left, Down, Up, Right</div><div class="keybind-desc">Scroll left, down, up or right</div>
+      <div class="keybind-key">^t, ^d, ^u, ^y</div><div class="keybind-desc">Scroll a half page left, down, up or right</div><div class="keybind-key">space, b</div><div class="keybind-desc">Page down / page up</div>
+      <div class="keybind-key">gg, G</div><div class="keybind-desc">Goto first or last page</div><div class="keybind-key">P</div><div class="keybind-desc">Snap to the current page</div>
+      <div class="keybind-key">H, L</div><div class="keybind-desc">Goto top or bottom of current page</div><div class="keybind-key">^o, ^i</div><div class="keybind-desc">Move backward/forward through jump list</div>
+      <div class="keybind-key">Escape</div><div class="keybind-desc">Open/close keybinds viewer</div><div class="keybind-key">/</div><div class="keybind-desc">Goto page number</div>
+      <div class="keybind-key">r</div><div class="keybind-desc">Rotate by 90 degrees</div><div class="keybind-key">z</div><div class="keybind-desc">Toggle Zen mode</div>
+      <div class="keybind-key">c</div><div class="keybind-desc">Toggle color in Zen mode</div><div class="keybind-key">d</div><div class="keybind-desc">Toggle dual page view</div>
+      <div class="keybind-key">p</div><div class="keybind-desc">Toggle pageless & compression</div><div class="keybind-key">F11</div><div class="keybind-desc">Toggle fullscreen mode</div>
+      <div class="keybind-key">=, -</div><div class="keybind-desc">Zoom in / out</div><div class="keybind-key">0</div><div class="keybind-desc">Reset zoom to 100%</div>
+      <div class="keybind-key">R</div><div class="keybind-desc">Reload document</div><div class="keybind-key">q</div><div class="keybind-desc">Quit</div>
+    </div>
     <div style="text-align:right; margin-top:8px"><button id="keybindsCloseBtn">Close</button></div>
   </div>
 </div>
@@ -335,32 +320,18 @@ input[type="range"] { accent-color: #4ade7f; }
 
 
   function compactKeybindsTable() {
-    const table = document.getElementById('keybindsText');
-    if (!table || table.dataset.compact === '1') return;
-    const tbody = table.querySelector('tbody');
-    if (!tbody) return;
-    const items = [...tbody.querySelectorAll('tr')]
-      .map((tr) => {
-        const tds = tr.querySelectorAll('td');
-        if (tds.length < 2) return null;
-        return { key: tds[0].textContent.trim(), desc: tds[1].textContent.trim() };
-      })
-      .filter(Boolean);
+    const grid = document.getElementById('keybindsText');
+    if (!grid || grid.dataset.compact === '1') return;
 
     function keysToHtml(keyStr) {
       return keyStr.split(/,\s+/).map(k => `<kbd class="keycap">${k.trim()}</kbd>`).join('');
     }
 
-    tbody.innerHTML = '';
-    for (let i = 0; i < items.length; i++) {
-      const a = items[i];
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="keybind-key">${keysToHtml(a.key)}</td>
-        <td class="keybind-desc">${a.desc}</td>`;
-      tbody.appendChild(tr);
-    }
-    table.dataset.compact = '1';
+    // Apply keycap rendering to all .keybind-key divs already in the DOM
+    grid.querySelectorAll('.keybind-key').forEach(el => {
+      el.innerHTML = keysToHtml(el.textContent.trim());
+    });
+    grid.dataset.compact = '1';
   }
 
   function updateCurrentPageFromScroll() {
