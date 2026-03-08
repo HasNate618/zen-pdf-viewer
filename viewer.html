@@ -201,11 +201,11 @@ input[type="range"] { accent-color: #4ade7f; }
       <div class="keybind-key">^t, ^d, ^u, ^y</div><div class="keybind-desc">Scroll a half page left, down, up or right</div><div class="keybind-key">space, b</div><div class="keybind-desc">Page down / page up</div>
       <div class="keybind-key">gg, G</div><div class="keybind-desc">Goto first or last page</div><div class="keybind-key">P</div><div class="keybind-desc">Snap to the current page</div>
       <div class="keybind-key">H, L</div><div class="keybind-desc">Goto top or bottom of current page</div><div class="keybind-key">^o, ^i</div><div class="keybind-desc">Move backward/forward through jump list</div>
-      <div class="keybind-key">Escape</div><div class="keybind-desc">Open/close keybinds viewer</div><div class="keybind-key">/</div><div class="keybind-desc">Goto page number</div>
+      <div class="keybind-key">Escape, ?</div><div class="keybind-desc">Open/close keybinds viewer</div><div class="keybind-key">:</div><div class="keybind-desc">Goto page number</div>
       <div class="keybind-key">r</div><div class="keybind-desc">Rotate by 90 degrees</div><div class="keybind-key">z</div><div class="keybind-desc">Toggle Zen mode</div>
-      <div class="keybind-key">c</div><div class="keybind-desc">Toggle color in Zen mode</div><div class="keybind-key">d</div><div class="keybind-desc">Toggle dual page view</div>
-      <div class="keybind-key">p</div><div class="keybind-desc">Toggle pageless & compression</div><div class="keybind-key">F11</div><div class="keybind-desc">Toggle fullscreen mode</div>
-      <div class="keybind-key">=, -</div><div class="keybind-desc">Zoom in / out</div><div class="keybind-key">0</div><div class="keybind-desc">Reset zoom to 100%</div>
+      <div class="keybind-key">c</div><div class="keybind-desc">Toggle color in Zen mode</div><div class="keybind-key">f</div><div class="keybind-desc">Find in document</div>
+      <div class="keybind-key">p</div><div class="keybind-desc">Toggle pageless & compression</div><div class="keybind-key">d</div><div class="keybind-desc">Toggle dual page view</div>
+      <div class="keybind-key">F11</div><div class="keybind-desc">Toggle fullscreen mode</div><div class="keybind-key">=, -</div><div class="keybind-desc">Zoom in / out</div>
       <div class="keybind-key">R</div><div class="keybind-desc">Reload document</div><div class="keybind-key">q</div><div class="keybind-desc">Quit</div>
     </div>
     <div style="text-align:right; margin-top:8px"><button id="keybindsCloseBtn">Close</button></div>
@@ -929,8 +929,8 @@ input[type="range"] { accent-color: #4ade7f; }
         return;
       }
 
-      // Toggle keybind viewer on Escape
-      if (e.key === 'Escape') {
+      // Toggle keybind viewer on Escape or ?
+      if (e.key === 'Escape' || e.key === '?') {
         if (keybindsOverlay) keybindsOverlay.hidden = !keybindsOverlay.hidden;
         e.preventDefault();
         return;
@@ -1002,6 +1002,7 @@ input[type="range"] { accent-color: #4ade7f; }
        if (e.key === 'r' && !e.ctrlKey) { state.rotation = (state.rotation + 90) % 360; await resetAndRender(); e.preventDefault(); return; }
        if (e.key === 'z') { state.zenMode = !state.zenMode; updateModeClass(); await resetAndRender(); e.preventDefault(); return; }
        if (e.key === 'c') { state.keepImagesColor = !state.keepImagesColor; await resetAndRender(); e.preventDefault(); return; }
+       if (e.key === 'f') { state.pdfDoc.findController?.executeCommand('find'); e.preventDefault(); return; }
 
       // dual-page mode toggle
       if (e.key === 'd') {
@@ -1039,7 +1040,7 @@ input[type="range"] { accent-color: #4ade7f; }
        if (e.key === '0') { state.scale = 1; await resetAndRender(); e.preventDefault(); return; }
 
       // goto page prompt
-      if (e.key === '/') { handleGotoPagePrompt(); e.preventDefault(); return; }
+      if (e.key === ':') { handleGotoPagePrompt(); e.preventDefault(); return; }
 
       // quit
       if (e.key === 'q') { try { window.close(); } catch(err) { location.href='about:blank'; } e.preventDefault(); return; }
