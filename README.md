@@ -317,6 +317,8 @@ http://127.0.0.1:PORT/viewer.html?file=doc.pdf&zen=1&imgcolor=0
 | `fg` | `#e6e6e6` | Foreground/text color (URL-encoded hex) |
 | `bg` | `rgba(0,0,0,0.45)` | Toolbar background color |
 
+**Smart Page Caching:** Documents with ≤150 pages render all pages upfront and keep them in the DOM for instant scrolling. Larger documents use dynamic windowing to preserve memory. This threshold is configurable in `viewer.html` (`perf.smallDocThreshold`).
+
 ---
 
 ## Theming & Customization
@@ -348,6 +350,7 @@ By default the viewer loads PDF.js from a CDN. To run fully offline:
 3. A **text layer** is rendered on top of each canvas using `renderTextLayer`, making text selectable and copyable.
 4. If **Zen mode** is active, a pixel-level pass reads the canvas data, converts each pixel to grayscale and inverts it, and makes near-white backgrounds transparent in pageless mode. An optional heuristic skips colorful pixels to preserve image color.
 5. A **resize debounce** (180 ms) re-scales and re-renders the entire document when the window size changes. A **render token** ensures stale render passes are discarded when a new one starts.
+6. **Smart page caching:** For documents with ≤150 pages, all pages are rendered upfront and kept in the DOM for instant scrolling. For larger documents, only visible pages plus a buffer (configurable via `perf.renderAhead`/`perf.renderBehind`) are rendered, and pages outside this window are unloaded to conserve memory.
 
 ---
 

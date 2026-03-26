@@ -79,6 +79,25 @@ html, body {
   to { opacity: 0; }
 }
 
+@keyframes transitionOverlay {
+  from { opacity: 0; }
+  to { opacity: 0.15; }
+}
+
+#transitionOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(18,18,20,0.15);
+  z-index: 999;
+  pointer-events: none;
+  display: none;
+  animation: transitionOverlay 0.25s ease-out;
+}
+
+#transitionOverlay.active {
+  display: block;
+}
+
 .overlay { position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; background: rgba(18,18,20,0.45); z-index:1001; padding: clamp(8px, 3vw, 40px); box-sizing: border-box; animation: fadeIn 0.25s ease-out; }
 .overlay[hidden] { display:none; }
 .overlay.closing { animation: fadeOut 0.15s ease-out forwards; }
@@ -247,6 +266,7 @@ input[type="range"] { accent-color: #4ade7f; }
   </div>
 </div>
 <div id="error"></div>
+<div id="transitionOverlay"></div>
 <div id="viewerContainer"></div>
 
 <script src="https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.min.js"></script>
@@ -265,6 +285,7 @@ input[type="range"] { accent-color: #4ade7f; }
     maxCachePages: 12,
     largeDocPages: 120,
     largeDocMaxDpr: 1.1,
+    smallDocThreshold: 150,
   };
 
   const state = {
@@ -280,6 +301,7 @@ input[type="range"] { accent-color: #4ade7f; }
 
   const container = document.getElementById("viewerContainer");
   const errorEl = document.getElementById("error");
+  const transitionOverlay = document.getElementById("transitionOverlay");
   const zoomInput = document.getElementById("zoom"); // optional (toolbar removed)
   const zenToast = document.getElementById("zenToast");
   const keybindsOverlay = document.getElementById("keybindsOverlay");
@@ -304,9 +326,21 @@ input[type="range"] { accent-color: #4ade7f; }
   state.pageObserver = null;
   state.baseViewport = null;
   state.largeDoc = false;
+  state.isSmallDoc = false;
+  state.isTransitioning = false;
 
   function clamp(v, min, max) {
     return Math.min(max, Math.max(min, v));
+  }
+
+  function startTransition() {
+    state.isTransitioning = true;
+    transitionOverlay.classList.add("active");
+  }
+
+  function endTransition() {
+    state.isTransitioning = false;
+    transitionOverlay.classList.remove("active");
   }
 
   function showError(message) {
@@ -599,6 +633,22 @@ input[type="range"] { accent-color: #4ade7f; }
   }
 
   function buildPlaceholders() {
+    // Preserve the currently visible page to avoid flash
+    const centerY = window.scrollY + window.innerHeight / 2;
+    let centerPage = null;
+    let minDist = Infinity;
+    
+    for (let i = 1; i <= (state.pdfDoc?.numPages || 0); i++) {
+      const el = document.getElementById(`page-${i}`);
+      if (!el) continue;
+      const pageCenter = el.offsetTop + el.offsetHeight / 2;
+      const dist = Math.abs(pageCenter - centerY);
+      if (dist < minDist) {
+        minDist = dist;
+        centerPage = i;
+      }
+    }
+    
     container.innerHTML = "";
     state.renderedPages.clear();
     state.visiblePages.clear();
@@ -642,9 +692,11 @@ input[type="range"] { accent-color: #4ade7f; }
       state.renderedPages.add(pageNo);
     }
 
-    for (const pageNo of Array.from(state.renderedPages)) {
-      if (pageNo < start || pageNo > end) {
-        replaceWithPlaceholder(pageNo);
+    if (!state.isSmallDoc) {
+      for (const pageNo of Array.from(state.renderedPages)) {
+        if (pageNo < start || pageNo > end) {
+          replaceWithPlaceholder(pageNo);
+        }
       }
     }
   }
@@ -685,6 +737,7 @@ input[type="range"] { accent-color: #4ade7f; }
 
   async function resetAndRender() {
     if (!state.pdfDoc) return;
+    startTransition();
     const anchor = getViewportAnchor();
     state.pageSizes.clear();
     state.renderedPages.clear();
@@ -693,6 +746,10 @@ input[type="range"] { accent-color: #4ade7f; }
     initPageObserver();
     restoreViewportAnchor(anchor);
     scheduleRenderWindow();
+    // End transition after rendering completes (approximately 2 frames + render time)
+    setTimeout(() => {
+      if (state.isTransitioning) endTransition();
+    }, 300);
   }
 
   function goToPage(n, smooth = true, recordHistory = true) {
@@ -1117,13 +1174,18 @@ input[type="range"] { accent-color: #4ade7f; }
       pdfjsLib.GlobalWorkerOptions.workerSrc =
         "https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.worker.min.js";
 
-      state.pdfDoc = await pdfjsLib.getDocument({
+     state.pdfDoc = await pdfjsLib.getDocument({
         url: file,
         withCredentials: false,
       }).promise;
 
     state.largeDoc = state.pdfDoc.numPages >= perf.largeDocPages;
-    if (state.largeDoc) {
+    state.isSmallDoc = state.pdfDoc.numPages <= perf.smallDocThreshold;
+    
+    if (state.isSmallDoc) {
+      perf.renderBehind = state.pdfDoc.numPages;
+      perf.renderAhead = state.pdfDoc.numPages;
+    } else if (state.largeDoc) {
       state.compress = true;
       perf.renderBehind = Math.min(perf.renderBehind, 1);
       perf.renderAhead = Math.min(perf.renderAhead, 2);
