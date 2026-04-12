@@ -280,12 +280,13 @@ input[type="range"] { accent-color: #4ade7f; }
   };
 
   const perf = {
-    renderBehind: 2,
-    renderAhead: 4,
-    maxCachePages: 12,
-    largeDocPages: 120,
+    renderBehind: 4,
+    renderAhead: 8,
+    maxCachePages: 24,
+    largeDocPages: 300,
     largeDocMaxDpr: 1.1,
     smallDocThreshold: 150,
+    maxRenderedPages: 50,
   };
 
   const state = {
@@ -328,6 +329,7 @@ input[type="range"] { accent-color: #4ade7f; }
   state.largeDoc = false;
   state.isSmallDoc = false;
   state.isTransitioning = false;
+  state.renderedPagesMru = [];  // MRU list for page cache eviction
 
   function clamp(v, min, max) {
     return Math.min(max, Math.max(min, v));
@@ -630,6 +632,21 @@ input[type="range"] { accent-color: #4ade7f; }
     container.replaceChild(placeholder, existing);
     if (state.pageObserver) state.pageObserver.observe(placeholder);
     state.renderedPages.delete(pageNumber);
+    state.renderedPagesMru = state.renderedPagesMru.filter((p) => p !== pageNumber);
+  }
+
+  function unloadPage(pageNumber) {
+    if (state.renderedPages.has(pageNumber)) {
+      replaceWithPlaceholder(pageNumber);
+    }
+  }
+
+  function getLoadedPages() {
+    return {
+      loaded: Array.from(state.renderedPages).sort((a, b) => a - b),
+      maxCacheSize: perf.maxRenderedPages,
+      currentLoad: state.renderedPages.size
+    };
   }
 
   function buildPlaceholders() {
@@ -651,6 +668,7 @@ input[type="range"] { accent-color: #4ade7f; }
     
     container.innerHTML = "";
     state.renderedPages.clear();
+    state.renderedPagesMru = [];
     state.visiblePages.clear();
     const total = state.pdfDoc?.numPages || 0;
     const frag = document.createDocumentFragment();
@@ -681,7 +699,12 @@ input[type="range"] { accent-color: #4ade7f; }
 
     for (const pageNo of order) {
       if (token !== state.renderToken) return;
-      if (state.renderedPages.has(pageNo)) continue;
+      if (state.renderedPages.has(pageNo)) {
+        // Move to end of MRU list (most recently used)
+        state.renderedPagesMru = state.renderedPagesMru.filter((p) => p !== pageNo);
+        state.renderedPagesMru.push(pageNo);
+        continue;
+      }
       const pageNode = await renderPage(pageNo);
       if (token !== state.renderToken) return;
       const existing = document.getElementById(`page-${pageNo}`);
@@ -690,12 +713,23 @@ input[type="range"] { accent-color: #4ade7f; }
       }
       if (state.pageObserver) state.pageObserver.observe(pageNode);
       state.renderedPages.add(pageNo);
+      state.renderedPagesMru.push(pageNo);
+
+      // Enforce cache limit with LRU eviction
+      while (state.renderedPages.size > perf.maxRenderedPages && state.renderedPagesMru.length > 0) {
+        const lruPage = state.renderedPagesMru.shift();
+        if (state.renderedPages.has(lruPage)) {
+          replaceWithPlaceholder(lruPage);
+        }
+      }
     }
 
-    if (!state.isSmallDoc) {
-      for (const pageNo of Array.from(state.renderedPages)) {
-        if (pageNo < start || pageNo > end) {
-          replaceWithPlaceholder(pageNo);
+    // For small docs, never auto-unload; for large docs, respect the cache limit
+    if (!state.isSmallDoc && state.renderedPages.size > perf.maxRenderedPages) {
+      while (state.renderedPages.size > perf.maxRenderedPages && state.renderedPagesMru.length > 0) {
+        const lruPage = state.renderedPagesMru.shift();
+        if (state.renderedPages.has(lruPage)) {
+          replaceWithPlaceholder(lruPage);
         }
       }
     }

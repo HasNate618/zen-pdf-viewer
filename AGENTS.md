@@ -34,7 +34,7 @@ If a script is necessary, keep it small, shell-compatible, and comfortable for P
 - Verify that the keyboard shortcuts work (J/K for page navigation, Z to toggle Zen mode, etc.).
 - Confirm the text layer remains selectable by dragging a pointer across text elements.
 - Watch for console errors related to PDF.js fetch or worker loading and note them in the review.
-- **Test page unloading behavior:** For small PDFs (≤150 pages), scroll through and verify pages remain rendered (no placeholders). For large PDFs (>150 pages), verify pages outside the viewport are unloaded to save memory.
+- **Test page caching behavior:** For small PDFs (≤150 pages), scroll through and verify pages remain rendered (no placeholders). For large PDFs (>150 pages), verify that an LRU cache of ~50 pages is maintained (inspect `getLoadedPages()` in console to see cache size and which pages are loaded).
 - This flow counts as the single automated-ish test; capture any flakiness you see in the README.
 - If a regression occurs, describe the steps in README.md so the next agent can reproduce it.
 - Mention environmental assumptions (Linux desktop, Python 3 available) when you record the single test outcome.
@@ -43,7 +43,8 @@ If a script is necessary, keep it small, shell-compatible, and comfortable for P
 ## Manual verification tips
 Always scroll through multiple pages in pageless mode to ensure caching is sane and rendering tokens are reset.
 For small documents (≤150 pages), verify that scrolling does not cause any page unloading (check inspector or `state.renderedPages` in console).
-For large documents (>150 pages), verify that pages outside the visible window are unloaded to conserve memory (check `state.renderedPages` before and after scrolling).
+For large documents (>150 pages), verify that the LRU cache maintains ~50 pages (call `getLoadedPages()` in console to inspect current cache state, which shows loaded pages and cache size).
+To manually unload a specific page from the cache on a large document, call `unloadPage(pageNumber)` in the browser console to trigger explicit unload.
 Rotate the document (press r) and ensure the viewport anchor is restored after renderAll runs.
 Toggle dual-page mode with d and look for layout alignment issues; the CSS grid expects centered content.
 Enable Zen mode, toggle color preservation (c), and check that applyZenFilter behaves as expected.
