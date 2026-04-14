@@ -256,7 +256,7 @@ input[type="range"] { accent-color: #4ade7f; }
       <div class="keybind-key">J, PgDn</div><div class="keybind-desc">Go to the next page</div><div class="keybind-key">K, PgUp</div><div class="keybind-desc">Go to the previous page</div>
       <div class="keybind-key">h, j, k, l</div><div class="keybind-desc">Scroll left, down, up or right</div><div class="keybind-key">Left, Down, Up, Right</div><div class="keybind-desc">Scroll left, down, up or right</div>
       <div class="keybind-key">^t, ^d, ^u, ^y</div><div class="keybind-desc">Scroll a half page left, down, up or right</div><div class="keybind-key">space, b</div><div class="keybind-desc">Page down / page up</div>
-      <div class="keybind-key">gg, G</div><div class="keybind-desc">Goto first or last page</div><div class="keybind-key">P</div><div class="keybind-desc">Snap to the current page</div>
+      <div class="keybind-key">g, G</div><div class="keybind-desc">Goto first or last page</div><div class="keybind-key">P</div><div class="keybind-desc">Snap to the current page</div>
       <div class="keybind-key">H, L</div><div class="keybind-desc">Goto top or bottom of current page</div><div class="keybind-key">^o, ^i</div><div class="keybind-desc">Move backward/forward through jump list</div>
       <div class="keybind-key">Escape, ?</div><div class="keybind-desc">Open/close keybinds viewer</div><div class="keybind-key">:</div><div class="keybind-desc">Goto page number</div>
       <div class="keybind-key">r</div><div class="keybind-desc">Rotate by 90 degrees</div><div class="keybind-key">z</div><div class="keybind-desc">Toggle Zen mode</div>
@@ -881,10 +881,7 @@ input[type="range"] { accent-color: #4ade7f; }
     if (keybindsCloseBtn) keybindsCloseBtn.addEventListener('click', closeKeybinds);
 
     // helper functions
-    let lastKey = null;
-    let lastKeyTime = 0;
-    let seqTimer = null;
-    function setSeqTimer() { if (seqTimer) clearTimeout(seqTimer); seqTimer = setTimeout(() => { lastKey=null; seqTimer=null; }, 800); }
+
 
     // Improved selection handling: when dragging selection off-text, keep the last valid caret
     // so the selection endpoint doesn't jump back to the start of the document.
@@ -1099,11 +1096,9 @@ input[type="range"] { accent-color: #4ade7f; }
         return;
       }
 
-      // gg -> first page
+      // g -> first page
       if (e.key === 'g') {
-        const now = Date.now();
-        if (lastKey === 'g' && (now - lastKeyTime) < 600) { goToPage(1); lastKey = null; setSeqTimer(); }
-        else { lastKey = 'g'; lastKeyTime = now; setSeqTimer(); }
+        goToPage(1);
         e.preventDefault();
         return;
       }
