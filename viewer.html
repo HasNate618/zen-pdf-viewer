@@ -597,8 +597,9 @@ input[type="range"] { accent-color: #4ade7f; }
   }
 
   function getViewportAnchor() {
-    if (!state.pdfDoc) return { page: state.currentPage || 1, ratio: 0.5 };
+    if (!state.pdfDoc) return { page: state.currentPage || 1, vRatio: 0.5, hRatio: 0.5 };
     const centerY = window.scrollY + window.innerHeight / 2;
+    const centerX = window.scrollX + window.innerWidth / 2;
     let page = state.currentPage || 1;
     let bestEl = null;
     let bestDist = Infinity;
@@ -613,9 +614,10 @@ input[type="range"] { accent-color: #4ade7f; }
         bestEl = el;
       }
     }
-    if (!bestEl) return { page, ratio: 0.5 };
-    const ratio = clamp((centerY - bestEl.offsetTop) / Math.max(bestEl.offsetHeight, 1), 0, 1);
-    return { page, ratio };
+    if (!bestEl) return { page, vRatio: 0.5, hRatio: 0.5 };
+    const vRatio = clamp((centerY - bestEl.offsetTop) / Math.max(bestEl.offsetHeight, 1), 0, 1);
+    const hRatio = clamp((centerX - bestEl.offsetLeft) / Math.max(bestEl.offsetWidth, 1), 0, 1);
+    return { page, vRatio, hRatio };
   }
 
   function restoreViewportAnchor(anchor) {
@@ -623,9 +625,11 @@ input[type="range"] { accent-color: #4ade7f; }
     const el = document.getElementById(`page-${anchor.page}`);
     if (!el) return;
     state.currentPage = anchor.page;
-    const ratio = typeof anchor.ratio === "number" ? clamp(anchor.ratio, 0, 1) : 0.5;
-    const targetCenter = el.offsetTop + (el.offsetHeight * ratio);
-    window.scrollTo({ top: Math.max(0, targetCenter - (window.innerHeight / 2)), behavior: "auto" });
+    const vRatio = typeof anchor.vRatio === 'number' ? clamp(anchor.vRatio, 0, 1) : (typeof anchor.ratio === 'number' ? clamp(anchor.ratio, 0, 1) : 0.5);
+    const hRatio = typeof anchor.hRatio === 'number' ? clamp(anchor.hRatio, 0, 1) : 0.5;
+    const targetCenterY = el.offsetTop + (el.offsetHeight * vRatio);
+    const targetCenterX = el.offsetLeft + (el.offsetWidth * hRatio);
+    window.scrollTo({ top: Math.max(0, targetCenterY - (window.innerHeight / 2)), left: Math.max(0, targetCenterX - (window.innerWidth / 2)), behavior: "auto" });
   }
 
   function replaceWithPlaceholder(pageNumber) {
@@ -1188,9 +1192,9 @@ input[type="range"] { accent-color: #4ade7f; }
       if (e.key === 'F11') { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{}); else document.exitFullscreen().catch(()=>{}); e.preventDefault(); return; }
 
       // zoom = -
-       if (e.key === '=') { state.scale = Math.min(state.scale * 1.1, 4); await resetAndRender(); e.preventDefault(); return; }
-       if (e.key === '-') { state.scale = Math.max(state.scale / 1.1, 0.1); await resetAndRender(); e.preventDefault(); return; }
-       if (e.key === '0') { state.scale = 1; await resetAndRender(); e.preventDefault(); return; }
+       if (e.key === '=') { const anchor = getViewportAnchor(); state.scale = Math.min(state.scale * 1.1, 4); await resetAndRender(); restoreViewportAnchor(anchor); e.preventDefault(); return; }
+       if (e.key === '-') { const anchor = getViewportAnchor(); state.scale = Math.max(state.scale / 1.1, 0.1); await resetAndRender(); restoreViewportAnchor(anchor); e.preventDefault(); return; }
+       if (e.key === '0') { const anchor = getViewportAnchor(); state.scale = 1; await resetAndRender(); restoreViewportAnchor(anchor); e.preventDefault(); return; }
 
       // goto page prompt
       if (e.key === ':') { handleGotoPagePrompt(); e.preventDefault(); return; }
