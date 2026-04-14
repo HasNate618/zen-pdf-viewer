@@ -144,7 +144,10 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  align-items: center;
+  width: max-content;
+  min-width: 100%;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .dual-mode #viewerContainer {
@@ -170,7 +173,7 @@ html, body {
 }
 
 .pageless .pageShell {
-  margin: 0;
+  margin: 0 auto;
   border-radius: 0;
 }
 .pageCanvas {
