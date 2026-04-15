@@ -317,7 +317,7 @@ http://127.0.0.1:PORT/viewer.html?file=doc.pdf&zen=1&imgcolor=0
 | `fg` | `#e6e6e6` | Foreground/text color (URL-encoded hex) |
 | `bg` | `rgba(0,0,0,0.45)` | Toolbar background color |
 
-**Smart Page Caching:** Documents with ≤300 pages render all pages upfront and keep them in the DOM for instant scrolling. Larger documents use dynamic windowing to preserve memory. The viewer also applies a separate large-document optimization (reduced DPR and tighter windowing) when a document has ≥300 pages (controlled by `perf.largeDocPages` in `viewer.html`). The small-doc threshold is configurable (`perf.smallDocThreshold`).
+**Smart Page Caching:** Documents with ≤150 pages render all pages upfront on open and keep them in the DOM for instant scrolling. Larger documents use dynamic windowing to preserve memory. The viewer also applies a separate large-document optimization (reduced DPR and tighter windowing) when a document has ≥300 pages (controlled by `perf.largeDocPages` in `viewer.html`). The small-doc threshold is configurable (`perf.smallDocThreshold`).
 
 ---
 

@@ -742,6 +742,26 @@ input[type="range"] { accent-color: #4ade7f; }
     }
   }
 
+  async function renderAllPages() {
+    if (!state.pdfDoc) return;
+    const token = ++state.renderToken;
+    const total = state.pdfDoc.numPages;
+    const center = clamp(state.currentPage || 1, 1, total);
+    const order = buildRenderOrder(total, center);
+
+    for (const pageNo of order) {
+      if (token !== state.renderToken) return;
+      if (state.renderedPages.has(pageNo)) continue;
+      const pageNode = await renderPage(pageNo);
+      if (token !== state.renderToken) return;
+      const existing = document.getElementById(`page-${pageNo}`);
+      if (existing && existing.parentNode === container) {
+        container.replaceChild(pageNode, existing);
+      }
+      state.renderedPages.add(pageNo);
+    }
+  }
+
   function initPageObserver() {
     if (!state.pdfDoc) return;
     if (state.pageObserver) {
@@ -761,7 +781,7 @@ input[type="range"] { accent-color: #4ade7f; }
         }
       }
       updateCurrentPageFromScroll();
-      scheduleRenderWindow();
+      if (!state.isSmallDoc) scheduleRenderWindow();
     }, {
       root: null,
       rootMargin: "200px 0px",
@@ -780,10 +800,21 @@ input[type="range"] { accent-color: #4ade7f; }
     if (!state.pdfDoc) return;
     startTransition();
     const anchor = getViewportAnchor();
+    if (state.pageObserver) {
+      state.pageObserver.disconnect();
+      state.pageObserver = null;
+    }
     state.pageSizes.clear();
     state.renderedPages.clear();
     state.visiblePages.clear();
     buildPlaceholders();
+    if (state.isSmallDoc) {
+      await renderAllPages();
+      initPageObserver();
+      restoreViewportAnchor(anchor);
+      if (state.isTransitioning) endTransition();
+      return;
+    }
     initPageObserver();
     restoreViewportAnchor(anchor);
     scheduleRenderWindow();
@@ -848,7 +879,7 @@ input[type="range"] { accent-color: #4ade7f; }
       scrollTimer = setTimeout(() => {
         scrollTimer = null;
         updateCurrentPageFromScroll();
-        scheduleRenderWindow();
+        if (!state.isSmallDoc) scheduleRenderWindow();
       }, 120);
     }, { passive: true });
 
@@ -1259,9 +1290,7 @@ input[type="range"] { accent-color: #4ade7f; }
       const onResize = debounce(async () => { const changed = await adjustScaleToMode(); if (changed) await resetAndRender(); }, 180);
       window.addEventListener('resize', onResize);
 
-      buildPlaceholders();
-      initPageObserver();
-      scheduleRenderWindow();
+      await resetAndRender();
     } catch (err) {
       showError(`Could not render PDF: ${err?.message || err}`);
       console.error(err);
