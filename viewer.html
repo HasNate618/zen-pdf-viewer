@@ -315,8 +315,10 @@ input[type="range"] { accent-color: #4ade7f; }
     lastOutputScale: 1,
     lastViewportScale: 1,
     lastDevicePixelRatio: Math.max(window.devicePixelRatio || 1, 1),
+    baseDevicePixelRatio: Math.max(window.devicePixelRatio || 1, 1),
     lastSvgOversample: 1,
     suspendWindowRendering: false,
+    suspendObserverUpdates: false,
   };
 
   const container = document.getElementById("viewerContainer");
@@ -526,9 +528,33 @@ input[type="range"] { accent-color: #4ade7f; }
   function getSvgOversampleScale() {
     if (state.compress) return 1;
     const viewportScale = getViewportScale();
-    if (!Number.isFinite(viewportScale) || viewportScale <= 1.01) return 1;
+    const dpr = Math.max(window.devicePixelRatio || 1, 1);
+    const baseDpr = Math.max(state.baseDevicePixelRatio || dpr, 1);
+    const dprZoom = dpr / baseDpr;
+    const effectiveZoom = Math.max(viewportScale, dprZoom, 1);
+    if (!Number.isFinite(effectiveZoom) || effectiveZoom <= 1.01) return 1;
     const cap = state.largeDoc ? 1.75 : 2.25;
-    return clamp(viewportScale, 1, cap);
+    return clamp(effectiveZoom, 1, cap);
+  }
+
+  function updateDisplayScaleSnapshot() {
+    state.lastOutputScale = getOutputScale();
+    state.lastViewportScale = getViewportScale();
+    state.lastDevicePixelRatio = Math.max(window.devicePixelRatio || 1, 1);
+    state.lastSvgOversample = getSvgOversampleScale();
+  }
+
+  function hasDisplayScaleChange({
+    outputThreshold = 0.08,
+    viewportThreshold = 0.03,
+    dprThreshold = 0.01,
+    svgThreshold = 0.03,
+  } = {}) {
+    const outputChanged = Math.abs(getOutputScale() - state.lastOutputScale) > outputThreshold;
+    const viewportChanged = Math.abs(getViewportScale() - state.lastViewportScale) > viewportThreshold;
+    const dprChanged = Math.abs(Math.max(window.devicePixelRatio || 1, 1) - state.lastDevicePixelRatio) > dprThreshold;
+    const svgOversampleChanged = Math.abs(getSvgOversampleScale() - (state.lastSvgOversample || 1)) > svgThreshold;
+    return outputChanged || viewportChanged || dprChanged || svgOversampleChanged;
   }
 
   function buildRenderOrder(total, center) {
@@ -682,9 +708,10 @@ input[type="range"] { accent-color: #4ade7f; }
   }
 
   function getViewportAnchor() {
-    if (!state.pdfDoc) return { page: state.currentPage || 1, vRatio: 0.5, hRatio: 0.5 };
+    if (!state.pdfDoc) return { page: state.currentPage || 1, topRatio: 0, leftRatio: 0 };
+    const top = window.scrollY;
+    const left = window.scrollX;
     const centerY = window.scrollY + window.innerHeight / 2;
-    const centerX = window.scrollX + window.innerWidth / 2;
     let page = state.currentPage || 1;
     let bestEl = null;
     let bestDist = Infinity;
@@ -699,22 +726,65 @@ input[type="range"] { accent-color: #4ade7f; }
         bestEl = el;
       }
     }
-    if (!bestEl) return { page, vRatio: 0.5, hRatio: 0.5 };
-    const vRatio = clamp((centerY - bestEl.offsetTop) / Math.max(bestEl.offsetHeight, 1), 0, 1);
-    const hRatio = clamp((centerX - bestEl.offsetLeft) / Math.max(bestEl.offsetWidth, 1), 0, 1);
-    return { page, vRatio, hRatio };
+    const docHeight = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1);
+    const docWidth = Math.max(document.documentElement.scrollWidth - window.innerWidth, 1);
+    if (!bestEl) {
+      return {
+        page,
+        topRatio: 0,
+        leftRatio: 0,
+        docTopRatio: clamp(top / docHeight, 0, 1),
+        docLeftRatio: clamp(left / docWidth, 0, 1),
+      };
+    }
+    const topRatio = clamp((top - bestEl.offsetTop) / Math.max(bestEl.offsetHeight, 1), 0, 1);
+    const leftRatio = clamp((left - bestEl.offsetLeft) / Math.max(bestEl.offsetWidth, 1), 0, 1);
+    return {
+      page,
+      topRatio,
+      leftRatio,
+      docTopRatio: clamp(top / docHeight, 0, 1),
+      docLeftRatio: clamp(left / docWidth, 0, 1),
+    };
   }
 
   function restoreViewportAnchor(anchor) {
     if (!anchor) return;
     const el = document.getElementById(`page-${anchor.page}`);
-    if (!el) return;
-    state.currentPage = anchor.page;
-    const vRatio = typeof anchor.vRatio === 'number' ? clamp(anchor.vRatio, 0, 1) : (typeof anchor.ratio === 'number' ? clamp(anchor.ratio, 0, 1) : 0.5);
-    const hRatio = typeof anchor.hRatio === 'number' ? clamp(anchor.hRatio, 0, 1) : 0.5;
-    const targetCenterY = el.offsetTop + (el.offsetHeight * vRatio);
-    const targetCenterX = el.offsetLeft + (el.offsetWidth * hRatio);
-    window.scrollTo({ top: Math.max(0, targetCenterY - (window.innerHeight / 2)), left: Math.max(0, targetCenterX - (window.innerWidth / 2)), behavior: "auto" });
+    const maxTop = Math.max(document.documentElement.scrollHeight - window.innerHeight, 0);
+    const maxLeft = Math.max(document.documentElement.scrollWidth - window.innerWidth, 0);
+    if (el) {
+      state.currentPage = anchor.page;
+      const topRatio = typeof anchor.topRatio === "number"
+        ? clamp(anchor.topRatio, 0, 1)
+        : (typeof anchor.vRatio === "number" ? clamp(anchor.vRatio, 0, 1) : 0);
+      const leftRatio = typeof anchor.leftRatio === "number"
+        ? clamp(anchor.leftRatio, 0, 1)
+        : (typeof anchor.hRatio === "number" ? clamp(anchor.hRatio, 0, 1) : 0);
+      const targetTop = el.offsetTop + (el.offsetHeight * topRatio);
+      const targetLeft = el.offsetLeft + (el.offsetWidth * leftRatio);
+      window.scrollTo({
+        top: clamp(targetTop, 0, maxTop),
+        left: clamp(targetLeft, 0, maxLeft),
+        behavior: "auto",
+      });
+      return;
+    }
+    const docTopRatio = typeof anchor.docTopRatio === "number" ? clamp(anchor.docTopRatio, 0, 1) : 0;
+    const docLeftRatio = typeof anchor.docLeftRatio === "number" ? clamp(anchor.docLeftRatio, 0, 1) : 0;
+    window.scrollTo({
+      top: clamp(maxTop * docTopRatio, 0, maxTop),
+      left: clamp(maxLeft * docLeftRatio, 0, maxLeft),
+      behavior: "auto",
+    });
+  }
+
+  function restoreViewportAnchorStable(anchor) {
+    if (!anchor) return;
+    restoreViewportAnchor(anchor);
+    requestAnimationFrame(() => {
+      restoreViewportAnchor(anchor);
+    });
   }
 
   function replaceWithPlaceholder(pageNumber) {
@@ -856,6 +926,7 @@ input[type="range"] { accent-color: #4ade7f; }
       state.pageObserver = null;
     }
     const observer = new IntersectionObserver((entries) => {
+      if (state.suspendObserverUpdates) return;
       for (const entry of entries) {
         const target = entry.target;
         if (!target || !target.id) continue;
@@ -918,7 +989,9 @@ input[type="range"] { accent-color: #4ade7f; }
     const pages = getRefreshPageOrder();
     const anchor = getViewportAnchor();
     const previousSuspend = state.suspendWindowRendering;
+    const previousObserverSuspend = state.suspendObserverUpdates;
     state.suspendWindowRendering = true;
+    state.suspendObserverUpdates = true;
     const token = ++state.renderToken;
     if (showTransition) startTransition();
     updatePlaceholderSizes();
@@ -937,12 +1010,10 @@ input[type="range"] { accent-color: #4ade7f; }
         state.renderedPagesMru.push(pageNo);
       }
     } finally {
-      restoreViewportAnchor(anchor);
-      state.lastOutputScale = getOutputScale();
-      state.lastViewportScale = getViewportScale();
-      state.lastDevicePixelRatio = Math.max(window.devicePixelRatio || 1, 1);
-      state.lastSvgOversample = getSvgOversampleScale();
+      restoreViewportAnchorStable(anchor);
+      updateDisplayScaleSnapshot();
       state.suspendWindowRendering = previousSuspend;
+      state.suspendObserverUpdates = previousObserverSuspend;
       if (!state.isSmallDoc) scheduleRenderWindow();
       if (showTransition && state.isTransitioning) endTransition();
     }
@@ -963,17 +1034,15 @@ input[type="range"] { accent-color: #4ade7f; }
     if (state.isSmallDoc) {
       await renderAllPages();
       initPageObserver();
-      restoreViewportAnchor(anchor);
-      state.lastOutputScale = getOutputScale();
-      state.lastSvgOversample = getSvgOversampleScale();
+      restoreViewportAnchorStable(anchor);
+      updateDisplayScaleSnapshot();
       if (state.isTransitioning) endTransition();
       return;
     }
     initPageObserver();
-    restoreViewportAnchor(anchor);
+    restoreViewportAnchorStable(anchor);
     scheduleRenderWindow();
-    state.lastOutputScale = getOutputScale();
-    state.lastSvgOversample = getSvgOversampleScale();
+    updateDisplayScaleSnapshot();
     // End transition after rendering completes (approximately 2 frames + render time)
     setTimeout(() => {
       if (state.isTransitioning) endTransition();
@@ -1441,58 +1510,19 @@ input[type="range"] { accent-color: #4ade7f; }
         };
       }
 
-      let lastViewportResizeAt = 0;
       const onWindowResize = debounce(async () => {
-        const usingSvg = getRenderBackend() === "svg";
-        const viewportScale = getViewportScale();
-        const currentDpr = Math.max(window.devicePixelRatio || 1, 1);
-        const dprChanged = Math.abs(currentDpr - state.lastDevicePixelRatio) > 0.01;
-        const recentViewportResize = (Date.now() - lastViewportResizeAt) < 260;
-        if (recentViewportResize && Math.abs(viewportScale - 1) > 0.01) {
-          if (usingSvg) state.lastOutputScale = getOutputScale();
-          return;
-        }
-        if (!usingSvg && dprChanged) {
-          await rerenderRenderedPages();
-          return;
-        }
         const scaleChanged = await adjustScaleToMode();
-        if (scaleChanged) {
+        if (scaleChanged || hasDisplayScaleChange()) {
           await rerenderRenderedPages();
         } else {
-          state.lastOutputScale = getOutputScale();
-          state.lastViewportScale = viewportScale;
-          state.lastDevicePixelRatio = currentDpr;
-          state.lastSvgOversample = getSvgOversampleScale();
+          updateDisplayScaleSnapshot();
         }
       }, 180);
       const onViewportResize = debounce(async () => {
-        lastViewportResizeAt = Date.now();
-        const viewportScale = getViewportScale();
-        if (getRenderBackend() === "svg") {
-          const oversampleScale = getSvgOversampleScale();
-          const oversampleChanged = Math.abs(oversampleScale - (state.lastSvgOversample || 1)) > 0.05;
-          const viewportChanged = Math.abs(viewportScale - state.lastViewportScale) > 0.03;
-          if (oversampleChanged || viewportChanged) {
-            await rerenderRenderedPages();
-          } else {
-            state.lastOutputScale = getOutputScale();
-            state.lastViewportScale = viewportScale;
-            state.lastDevicePixelRatio = Math.max(window.devicePixelRatio || 1, 1);
-            state.lastSvgOversample = oversampleScale;
-          }
-          return;
-        }
-        const previousOutputScale = state.lastOutputScale || getOutputScale();
-        const nextOutputScale = getOutputScale();
-        const viewportChanged = Math.abs(viewportScale - state.lastViewportScale) > 0.01;
-        if (Math.abs(nextOutputScale - previousOutputScale) > 0.08 || viewportChanged) {
+        if (hasDisplayScaleChange()) {
           await rerenderRenderedPages();
         } else {
-          state.lastOutputScale = nextOutputScale;
-          state.lastViewportScale = viewportScale;
-          state.lastDevicePixelRatio = Math.max(window.devicePixelRatio || 1, 1);
-          state.lastSvgOversample = getSvgOversampleScale();
+          updateDisplayScaleSnapshot();
         }
       }, 140);
 
@@ -1500,10 +1530,8 @@ input[type="range"] { accent-color: #4ade7f; }
       const firstPage = await getPdfPage(1);
       state.baseViewport = firstPage.getViewport({ scale: 1, rotation: 0 });
       await adjustScaleToMode();
-      state.lastOutputScale = getOutputScale();
-      state.lastViewportScale = getViewportScale();
-      state.lastDevicePixelRatio = Math.max(window.devicePixelRatio || 1, 1);
-      state.lastSvgOversample = getSvgOversampleScale();
+      state.baseDevicePixelRatio = Math.max(window.devicePixelRatio || 1, 1);
+      updateDisplayScaleSnapshot();
       window.addEventListener('resize', onWindowResize);
       if (window.visualViewport) {
         window.visualViewport.addEventListener('resize', onViewportResize);
