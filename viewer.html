@@ -590,28 +590,37 @@ input[type="range"] { accent-color: #4ade7f; }
     return order;
   }
 
-  async function adjustScaleToMode() {
+  async function getModeFitScale() {
+    if (!state.pdfDoc) return false;
+    const firstPage = await getPdfPage(1);
+    const vp = firstPage.getViewport({ scale: 1, rotation: (state.rotation || 0) });
+    const pad = 16;
+    const availableW = Math.max(100, window.innerWidth - pad);
+    const availableH = Math.max(100, window.innerHeight - pad);
+    let nextScale;
+
+    if (state.dualMode) {
+      const gap = 8;
+      const totalWidth = (vp.width * 2) + gap;
+      nextScale = availableW / Math.max(totalWidth, 1);
+    } else {
+      const scaleX = availableW / vp.width;
+      const scaleY = availableH / vp.height;
+      nextScale = Math.max(scaleX, scaleY);
+    }
+
+    return Math.max(nextScale, 0.1);
+  }
+
+  async function adjustScaleToMode({ skipWhenZoomedIn = false } = {}) {
     if (!state.pdfDoc) return false;
     try {
-      const firstPage = await getPdfPage(1);
-      const vp = firstPage.getViewport({ scale: 1, rotation: (state.rotation || 0) });
-      const pad = 16;
-      const availableW = Math.max(100, window.innerWidth - pad);
-      const availableH = Math.max(100, window.innerHeight - pad);
-      let nextScale;
-
-      if (state.dualMode) {
-        const gap = 8;
-        const totalWidth = (vp.width * 2) + gap;
-        nextScale = availableW / Math.max(totalWidth, 1);
-      } else {
-        const scaleX = availableW / vp.width;
-        const scaleY = availableH / vp.height;
-        nextScale = Math.max(scaleX, scaleY);
+      const fitScale = await getModeFitScale();
+      if (skipWhenZoomedIn && state.scale > fitScale + 0.01) {
+        return false;
       }
-
       const prevScale = state.scale;
-      state.scale = Math.max(nextScale, 0.1);
+      state.scale = fitScale;
       if (zoomInput) zoomInput.value = clamp(Math.round(state.scale * 100), 50, 250);
       return Math.abs(prevScale - state.scale) > 0.01;
     } catch (e) {
@@ -1535,8 +1544,12 @@ input[type="range"] { accent-color: #4ade7f; }
         };
       }
 
+      let lastWindowWidth = window.innerWidth;
       const onWindowResize = debounce(async () => {
-        const scaleChanged = await adjustScaleToMode();
+        const widthChanged = window.innerWidth !== lastWindowWidth;
+        lastWindowWidth = window.innerWidth;
+        if (!widthChanged) return;
+        const scaleChanged = await adjustScaleToMode({ skipWhenZoomedIn: true });
         if (scaleChanged || hasDisplayScaleChange()) {
           await rerenderRenderedPages();
         } else {
