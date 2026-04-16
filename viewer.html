@@ -313,6 +313,8 @@ input[type="range"] { accent-color: #4ade7f; }
     compress: false,
     renderToken: 0,
     lastOutputScale: 1,
+    lastViewportScale: 1,
+    lastDevicePixelRatio: Math.max(window.devicePixelRatio || 1, 1),
   };
 
   const container = document.getElementById("viewerContainer");
@@ -490,11 +492,16 @@ input[type="range"] { accent-color: #4ade7f; }
     return page;
   }
 
+  function getViewportScale() {
+    const vv = window.visualViewport;
+    if (!vv || !Number.isFinite(vv.scale) || vv.scale <= 0) return 1;
+    return vv.scale;
+  }
+
   function getEffectiveDevicePixelRatio() {
     const dpr = Math.max(window.devicePixelRatio || 1, 1);
     if (getRenderBackend() === "svg") return dpr;
-    const vv = window.visualViewport;
-    const viewportScale = vv && Number.isFinite(vv.scale) && vv.scale > 0 ? vv.scale : 1;
+    const viewportScale = getViewportScale();
     return Math.max(dpr * viewportScale, 1);
   }
 
@@ -876,12 +883,17 @@ input[type="range"] { accent-color: #4ade7f; }
     if (state.isSmallDoc) return preferredOrder;
     const start = clamp(center - perf.renderBehind, 1, total);
     const end = clamp(center + perf.renderAhead, 1, total);
-    return buildRenderOrder(end - start + 1, center - start + 1)
+    const windowOrder = buildRenderOrder(end - start + 1, center - start + 1)
       .map((idx) => idx + start - 1);
+    const visibleOrder = Array.from(state.visiblePages.keys())
+      .map((pageNo) => clamp(Number.parseInt(pageNo, 10) || 1, 1, total))
+      .filter((pageNo, idx, arr) => arr.indexOf(pageNo) === idx);
+    return [...new Set([...visibleOrder, ...windowOrder])];
   }
 
   async function rerenderRenderedPages({ showTransition = false } = {}) {
     if (!state.pdfDoc) return;
+    updateCurrentPageFromScroll();
     const pages = getRefreshPageOrder();
     const anchor = getViewportAnchor();
     const token = ++state.renderToken;
@@ -899,6 +911,8 @@ input[type="range"] { accent-color: #4ade7f; }
     }
     restoreViewportAnchor(anchor);
     state.lastOutputScale = getOutputScale();
+    state.lastViewportScale = getViewportScale();
+    state.lastDevicePixelRatio = Math.max(window.devicePixelRatio || 1, 1);
     if (!state.isSmallDoc) scheduleRenderWindow();
     if (showTransition && state.isTransitioning) endTransition();
   }
@@ -1398,12 +1412,16 @@ input[type="range"] { accent-color: #4ade7f; }
       let lastViewportResizeAt = 0;
       const onWindowResize = debounce(async () => {
         const usingSvg = getRenderBackend() === "svg";
-        const viewportScale = window.visualViewport && Number.isFinite(window.visualViewport.scale)
-          ? window.visualViewport.scale
-          : 1;
+        const viewportScale = getViewportScale();
+        const currentDpr = Math.max(window.devicePixelRatio || 1, 1);
+        const dprChanged = Math.abs(currentDpr - state.lastDevicePixelRatio) > 0.01;
         const recentViewportResize = (Date.now() - lastViewportResizeAt) < 260;
         if (recentViewportResize && Math.abs(viewportScale - 1) > 0.01) {
           if (usingSvg) state.lastOutputScale = getOutputScale();
+          return;
+        }
+        if (!usingSvg && dprChanged) {
+          await rerenderRenderedPages();
           return;
         }
         const scaleChanged = await adjustScaleToMode();
@@ -1411,20 +1429,28 @@ input[type="range"] { accent-color: #4ade7f; }
           await rerenderRenderedPages();
         } else {
           state.lastOutputScale = getOutputScale();
+          state.lastViewportScale = viewportScale;
+          state.lastDevicePixelRatio = currentDpr;
         }
       }, 180);
       const onViewportResize = debounce(async () => {
         lastViewportResizeAt = Date.now();
+        const viewportScale = getViewportScale();
         if (getRenderBackend() === "svg") {
           state.lastOutputScale = getOutputScale();
+          state.lastViewportScale = viewportScale;
+          state.lastDevicePixelRatio = Math.max(window.devicePixelRatio || 1, 1);
           return;
         }
         const previousOutputScale = state.lastOutputScale || getOutputScale();
         const nextOutputScale = getOutputScale();
-        if (Math.abs(nextOutputScale - previousOutputScale) > 0.08) {
+        const viewportChanged = Math.abs(viewportScale - state.lastViewportScale) > 0.01;
+        if (Math.abs(nextOutputScale - previousOutputScale) > 0.08 || viewportChanged) {
           await rerenderRenderedPages();
         } else {
           state.lastOutputScale = nextOutputScale;
+          state.lastViewportScale = viewportScale;
+          state.lastDevicePixelRatio = Math.max(window.devicePixelRatio || 1, 1);
         }
       }, 140);
 
@@ -1433,6 +1459,8 @@ input[type="range"] { accent-color: #4ade7f; }
       state.baseViewport = firstPage.getViewport({ scale: 1, rotation: 0 });
       await adjustScaleToMode();
       state.lastOutputScale = getOutputScale();
+      state.lastViewportScale = getViewportScale();
+      state.lastDevicePixelRatio = Math.max(window.devicePixelRatio || 1, 1);
       window.addEventListener('resize', onWindowResize);
       if (window.visualViewport) {
         window.visualViewport.addEventListener('resize', onViewportResize);
