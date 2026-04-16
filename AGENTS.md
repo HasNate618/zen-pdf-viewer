@@ -47,8 +47,8 @@ For large documents (>150 pages), verify that the LRU cache maintains ~50 pages 
 To manually unload a specific page from the cache on a large document, call `unloadPage(pageNumber)` in the browser console to trigger explicit unload.
 Rotate the document (press r) and ensure the viewport anchor is restored after renderAll runs.
 Toggle dual-page mode with d and look for layout alignment issues; the CSS grid expects centered content.
-Enable Zen mode, toggle color preservation (c), and check that applyZenFilter behaves as expected.
-Resize the browser window aggressively to trigger the resize debounce and verify adjustScaleToMode keeps canvas DPI appropriate.
+Enable Zen mode, toggle color preservation (c), and check Zen rendering behaves as expected (SVG filter path or canvas fallback path).
+Resize the browser window aggressively to trigger the resize debounce and verify SVG sharpness/canvas fallback DPI behavior stays appropriate.
 Try page jumps via gg and G to make sure the jump-back and jump-forward stacks behave predictably.
 Trigger the toast dismissal flow and make sure cookies suppress repeate invites; check the console for suppressed exceptions.
 Open the keybind overlay (Esc) and ensure compactKeybindsTable still renders clean table markup.
@@ -80,7 +80,7 @@ Checking these paths manually is the most reliable regression guard because ther
 - Use backdrop-filter and rgba for depth, but be conservative to keep performance sane.
 
 ## HTML structure expectations
-- Keep the body lean: the viewer container, overlays, toast, error, and canvas elements should remain the only top-level nodes.
+- Keep the body lean: the viewer container, overlays, toast, error, and render layers (SVG/canvas inside page shells) should remain the only top-level nodes.
 - When adding overlays or modals, follow the existing pattern of a `.overlay` wrapper with a `.overlay-inner` child.
 - Keep aria attributes and button labels descriptive to preserve accessibility for keyboard-only users.
 - Avoid adding third-party embeds or inline scripts outside the PDF.js dependency that is already declared in viewer.html.

@@ -10,7 +10,7 @@ A lightweight, keyboard-first PDF viewer built on PDF.js. It runs entirely in yo
 
 - **Zen mode** — grayscale + invert for comfortable dark reading, with optional image-color preservation
 - **Pageless transparent rendering** — compositor blur/transparency (e.g. Hyprland) shows through the page background
-- **High-DPI canvas** — respects `devicePixelRatio` for sharp output on retina/HiDPI screens
+- **SVG-first rendering** — vector-sharp pages at browser/pinch zoom (including pageless/Zen), with canvas fallback when forced or unsupported
 - **Selectable text** — PDF.js text layer lets you copy and search text in any PDF
 - **Keyboard-first** — vim-style navigation, dual-page mode, zoom, rotation, jump list, and more
 - **Cross-platform** — Linux, macOS, and Windows via the included launcher scripts
@@ -314,6 +314,7 @@ http://127.0.0.1:PORT/viewer.html?file=doc.pdf&zen=1&imgcolor=0
 | `imgcolor` | `0` | Preserve image colors in Zen mode: `1` = keep, `0` = recolor |
 | `dual` | `0` | Dual-page view: `1` = enabled |
 | `pageless` | same as `zen` | Pageless/transparent mode: `1` = enabled |
+| `svg` | `1` | Rendering backend preference: `1` = SVG-first (vector), `0` = force canvas |
 | `fg` | `#e6e6e6` | Foreground/text color (URL-encoded hex) |
 | `bg` | `rgba(0,0,0,0.45)` | Toolbar background color |
 
@@ -346,11 +347,12 @@ By default the viewer loads PDF.js from a CDN. To run fully offline:
 ## How It Works
 
 1. The **launcher** (`launch.sh` / `launch.ps1`) copies the requested PDF into a temporary directory alongside `viewer.html`, then starts `python3 -m http.server` bound to `127.0.0.1` on a randomly chosen free port.
-2. **PDF.js** (loaded from CDN or vendored locally) parses the PDF and renders each page to a high-DPI `<canvas>` using `devicePixelRatio` for sharp output.
-3. A **text layer** is rendered on top of each canvas using `renderTextLayer`, making text selectable and copyable.
-4. If **Zen mode** is active, a pixel-level pass reads the canvas data, converts each pixel to grayscale and inverts it, and makes near-white backgrounds transparent in pageless mode. An optional heuristic skips colorful pixels to preserve image color.
-5. A **resize debounce** (180 ms) re-scales and re-renders the entire document when the window size changes. A **render token** ensures stale render passes are discarded when a new one starts.
-6. **Smart page caching:** For documents with ≤150 pages, all pages are rendered upfront and kept in the DOM for instant scrolling. For larger documents (>150 pages), an LRU cache maintains up to 50 rendered pages in memory. New pages are added when scrolled into view, and the least recently used pages are unloaded when the cache exceeds the limit. This provides fast browsing through typical documents without the startup cost of rendering all pages.
+2. **PDF.js** (loaded from CDN or vendored locally) parses each page and renders it as **SVG by default** for vector-sharp browser/pinch zoom.
+3. A **text layer** is rendered on top using `renderTextLayer`, making text selectable and copyable.
+4. In **Zen mode with SVG backend**, a filter-based SVG path is used for dark rendering. This keeps SVG sharpness but may look different from the older pixel-heuristic Zen filter.
+5. A high-DPI `<canvas>` path is still used when `svg=0` is set or when SVG rendering is unavailable.
+6. A **display-scale debounce** (180 ms) watches window/viewport changes. Pinch-only viewport zoom avoids full rerender in SVG mode; layout changes rerender in place to reduce flashing. A **render token** ensures stale render passes are discarded when a new one starts.
+7. **Smart page caching:** For documents with ≤150 pages, all pages are rendered upfront and kept in the DOM for instant scrolling. For larger documents (>150 pages), an LRU cache maintains up to 50 rendered pages in memory. New pages are added when scrolled into view, and the least recently used pages are unloaded when the cache exceeds the limit.
 
 ---
 
@@ -370,6 +372,12 @@ The launcher requires `curl` or `wget` on Linux/macOS. On Windows, `Invoke-WebRe
 
 **PDF.js worker fails to load**
 A network block or content-security policy may prevent the CDN worker from loading. See [Offline / Vendored PDF.js](#offline--vendored-pdfjs) to serve the worker locally.
+
+**SVG rendering falls back to canvas**
+Some PDF.js bundles/browser combinations may not expose SVG rendering APIs. The viewer logs a console warning/error and falls back to canvas rendering automatically; use `svg=0` to force canvas explicitly.
+
+**Zen mode looks different than before**
+In SVG backend, Zen uses filter-based styling instead of the older pixel-level heuristic. Text remains sharp, but transparency/image-color behavior can differ from previous canvas-only Zen output.
 
 **Server starts but browser does not open**
 On Linux the launcher uses `xdg-open`; on macOS it uses `open`. If neither is available you will see an error. Copy the printed URL from the terminal and open it manually in any browser.

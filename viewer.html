@@ -183,6 +183,14 @@ html, body {
   height: 100%;
   background: transparent;
 }
+.pageSvg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: transparent;
+}
 .textLayer {
   position: absolute;
   inset: 0;
@@ -287,7 +295,7 @@ input[type="range"] { accent-color: #4ade7f; }
     renderAhead: 8,
     maxCachePages: 24,
     largeDocPages: 300,
-    largeDocMaxDpr: 1.1,
+    largeDocMaxDpr: 1.75,
     smallDocThreshold: 150,
     maxRenderedPages: 50,
   };
@@ -297,10 +305,21 @@ input[type="range"] { accent-color: #4ade7f; }
     pdfDoc: null,
     zenMode: params.get("zen") !== "0",
     keepImagesColor: params.get("imgcolor") === "1",
+    svgEnabled: params.get("svg") !== "0",
+    svgSupported: typeof pdfjsLib !== "undefined" && typeof pdfjsLib.SVGGraphics === "function",
+    svgFallbackLogged: false,
     dualMode: params.get("dual") === "1",
     pageless: (params.get("pageless") !== null) ? (params.get("pageless") === "1") : (params.get("zen") !== "0"),
     compress: false,
     renderToken: 0,
+    lastOutputScale: 1,
+    lastViewportScale: 1,
+    lastDevicePixelRatio: Math.max(window.devicePixelRatio || 1, 1),
+    baseDevicePixelRatio: Math.max(window.devicePixelRatio || 1, 1),
+    lastSvgOversample: 1,
+    suspendWindowRendering: false,
+    suspendObserverUpdates: false,
+    renderMutationDepth: 0,
   };
 
   const container = document.getElementById("viewerContainer");
@@ -478,15 +497,86 @@ input[type="range"] { accent-color: #4ade7f; }
     return page;
   }
 
+  function getViewportScale() {
+    const vv = window.visualViewport;
+    if (!vv || !Number.isFinite(vv.scale) || vv.scale <= 0) return 1;
+    return vv.scale;
+  }
+
+  function getEffectiveDevicePixelRatio() {
+    const dpr = Math.max(window.devicePixelRatio || 1, 1);
+    if (getRenderBackend() === "svg") return dpr;
+    const viewportScale = getViewportScale();
+    return Math.max(dpr * viewportScale, 1);
+  }
+
+  function beginRenderMutation() {
+    state.renderMutationDepth += 1;
+    state.suspendWindowRendering = true;
+    state.suspendObserverUpdates = true;
+  }
+
+  function endRenderMutation() {
+    state.renderMutationDepth = Math.max(0, state.renderMutationDepth - 1);
+    const suspended = state.renderMutationDepth > 0;
+    state.suspendWindowRendering = suspended;
+    state.suspendObserverUpdates = suspended;
+  }
+
+  function getRenderBackend() {
+    if (!state.svgEnabled || !state.svgSupported) return "canvas";
+    return "svg";
+  }
+
   function getOutputScale() {
     if (state.compress) return 1;
-    const dpr = Math.max(window.devicePixelRatio || 1, 1);
+    const dpr = getEffectiveDevicePixelRatio();
     const pages = state.pdfDoc?.numPages || 1;
     if (state.largeDoc) return Math.min(dpr, perf.largeDocMaxDpr);
-    if (pages >= 120) return Math.min(dpr, 1.1);
-    if (pages >= 60) return Math.min(dpr, 1.25);
-    if (pages >= 30) return Math.min(dpr, 1.5);
-    return Math.min(dpr, 2);
+    if (pages >= 120) return Math.min(dpr, 1.25);
+    if (pages >= 60) return Math.min(dpr, 1.5);
+    if (pages >= 30) return Math.min(dpr, 2);
+    return Math.min(dpr, 3);
+  }
+
+  function getSvgOversampleScale() {
+    if (state.compress) return 1;
+    const viewportScale = getViewportScale();
+    const dpr = Math.max(window.devicePixelRatio || 1, 1);
+    const baseDpr = Math.max(state.baseDevicePixelRatio || dpr, 1);
+    const dprZoom = dpr / baseDpr;
+    const effectiveZoom = Math.max(viewportScale, dprZoom, 1);
+    if (!Number.isFinite(effectiveZoom) || effectiveZoom <= 1.005) return 1;
+    const cap = getSvgOversampleCap();
+    return clamp(effectiveZoom, 1, cap);
+  }
+
+  function getSvgOversampleCap() {
+    const pages = state.pdfDoc?.numPages || 1;
+    if (state.largeDoc) return state.zenMode ? 2.4 : 2;
+    if (pages >= 120) return state.zenMode ? 3.25 : 2.75;
+    if (pages >= 60) return state.zenMode ? 3.75 : 3.25;
+    return state.zenMode ? 4.5 : 4;
+  }
+
+  function updateDisplayScaleSnapshot() {
+    state.lastOutputScale = getOutputScale();
+    state.lastViewportScale = getViewportScale();
+    state.lastDevicePixelRatio = Math.max(window.devicePixelRatio || 1, 1);
+    state.lastSvgOversample = getSvgOversampleScale();
+  }
+
+  function hasDisplayScaleChange({
+    outputThreshold = 0.08,
+    viewportThreshold = 0.02,
+    dprThreshold = 0.01,
+    svgThreshold = 0.015,
+  } = {}) {
+    const outputChanged = Math.abs(getOutputScale() - state.lastOutputScale) > outputThreshold;
+    const viewportChanged = Math.abs(getViewportScale() - state.lastViewportScale) > viewportThreshold;
+    const dprChanged = Math.abs(Math.max(window.devicePixelRatio || 1, 1) - state.lastDevicePixelRatio) > dprThreshold;
+    const svgOversampleChanged = Math.abs(getSvgOversampleScale() - (state.lastSvgOversample || 1)) > svgThreshold;
+    return outputChanged || viewportChanged || dprChanged || svgOversampleChanged;
   }
 
   function buildRenderOrder(total, center) {
@@ -550,26 +640,9 @@ input[type="range"] { accent-color: #4ade7f; }
     return shell;
   }
 
-  async function renderPage(pageNumber) {
-    const page = await getPdfPage(pageNumber);
-    const viewport = page.getViewport({ scale: state.scale, rotation: (state.rotation || 0) });
-    state.pageSizes.set(pageNumber, { width: viewport.width, height: viewport.height });
-
-    const shell = document.createElement("div");
-    shell.className = "pageShell";
-    shell.id = `page-${pageNumber}`;
-    shell.style.width = `${viewport.width}px`;
-    shell.style.height = `${viewport.height}px`;
-
+  async function renderCanvasLayer(page, viewport, shell) {
     const canvas = document.createElement("canvas");
     canvas.className = "pageCanvas";
-
-    const textLayer = document.createElement("div");
-    textLayer.className = "textLayer";
-
-    shell.appendChild(canvas);
-    shell.appendChild(textLayer);
-
     const outputScale = getOutputScale();
     canvas.width = Math.floor(viewport.width * outputScale);
     canvas.height = Math.floor(viewport.height * outputScale);
@@ -591,13 +664,75 @@ input[type="range"] { accent-color: #4ade7f; }
     if (state.zenMode) {
       applyZenFilter(ctx, canvas.width, canvas.height, state.keepImagesColor);
     }
+    shell.appendChild(canvas);
+  }
 
-    await renderTextLayer(page, viewport, textLayer);
+  async function renderSvgLayer(page, viewport, shell) {
+    if (typeof pdfjsLib === "undefined" || typeof pdfjsLib.SVGGraphics !== "function") {
+      throw new Error("PDF.js SVGGraphics is unavailable");
+    }
+    const opList = await page.getOperatorList();
+    const svgGfx = new pdfjsLib.SVGGraphics(page.commonObjs, page.objs);
+    svgGfx.embedFonts = true;
+    const svg = await svgGfx.getSVG(opList, viewport);
+    svg.classList.add("pageSvg");
+    svg.setAttribute("width", `${viewport.width}`);
+    svg.setAttribute("height", `${viewport.height}`);
+    svg.style.width = "100%";
+    svg.style.height = "100%";
+    if (state.zenMode) {
+      svg.style.filter = state.keepImagesColor ? "invert(1) hue-rotate(180deg)" : "grayscale(1) invert(1)";
+    }
+    shell.appendChild(svg);
+  }
+
+  async function renderPage(pageNumber) {
+    const page = await getPdfPage(pageNumber);
+    const rotation = (state.rotation || 0);
+    const layoutViewport = page.getViewport({ scale: state.scale, rotation });
+    const backend = getRenderBackend();
+    const svgOversample = backend === "svg" ? getSvgOversampleScale() : 1;
+    const renderViewport = (backend === "svg" && svgOversample > 1.01)
+      ? page.getViewport({ scale: state.scale * svgOversample, rotation })
+      : layoutViewport;
+    state.pageSizes.set(pageNumber, { width: layoutViewport.width, height: layoutViewport.height });
+
+    const shell = document.createElement("div");
+    shell.className = "pageShell";
+    shell.id = `page-${pageNumber}`;
+    shell.style.width = `${layoutViewport.width}px`;
+    shell.style.height = `${layoutViewport.height}px`;
+
+    const textLayer = document.createElement("div");
+    textLayer.className = "textLayer";
+
+    if (backend === "svg") {
+      try {
+        await renderSvgLayer(page, renderViewport, shell);
+        shell.dataset.renderer = "svg";
+      } catch (err) {
+        state.svgSupported = false;
+        if (!state.svgFallbackLogged) {
+          console.error("SVG rendering failed; falling back to canvas rendering.", err);
+          state.svgFallbackLogged = true;
+        }
+        await renderCanvasLayer(page, layoutViewport, shell);
+        shell.dataset.renderer = "canvas";
+      }
+    } else {
+      await renderCanvasLayer(page, layoutViewport, shell);
+      shell.dataset.renderer = "canvas";
+    }
+
+    await renderTextLayer(page, layoutViewport, textLayer);
+    shell.appendChild(textLayer);
     return shell;
   }
 
   function getViewportAnchor() {
-    if (!state.pdfDoc) return { page: state.currentPage || 1, vRatio: 0.5, hRatio: 0.5 };
+    if (!state.pdfDoc) return { page: state.currentPage || 1, centerVRatio: 0.5, centerHRatio: 0.5 };
+    const top = window.scrollY;
+    const left = window.scrollX;
     const centerY = window.scrollY + window.innerHeight / 2;
     const centerX = window.scrollX + window.innerWidth / 2;
     let page = state.currentPage || 1;
@@ -614,22 +749,73 @@ input[type="range"] { accent-color: #4ade7f; }
         bestEl = el;
       }
     }
-    if (!bestEl) return { page, vRatio: 0.5, hRatio: 0.5 };
-    const vRatio = clamp((centerY - bestEl.offsetTop) / Math.max(bestEl.offsetHeight, 1), 0, 1);
-    const hRatio = clamp((centerX - bestEl.offsetLeft) / Math.max(bestEl.offsetWidth, 1), 0, 1);
-    return { page, vRatio, hRatio };
+    const docHeight = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1);
+    const docWidth = Math.max(document.documentElement.scrollWidth - window.innerWidth, 1);
+    if (!bestEl) {
+      return {
+        page,
+        centerVRatio: 0.5,
+        centerHRatio: 0.5,
+        docTopRatio: clamp(top / docHeight, 0, 1),
+        docLeftRatio: clamp(left / docWidth, 0, 1),
+        docCenterYRatio: clamp(centerY / docHeight, 0, 1),
+        docCenterXRatio: clamp(centerX / docWidth, 0, 1),
+      };
+    }
+    const centerVRatio = clamp((centerY - bestEl.offsetTop) / Math.max(bestEl.offsetHeight, 1), 0, 1);
+    const centerHRatio = clamp((centerX - bestEl.offsetLeft) / Math.max(bestEl.offsetWidth, 1), 0, 1);
+    return {
+      page,
+      centerVRatio,
+      centerHRatio,
+      docTopRatio: clamp(top / docHeight, 0, 1),
+      docLeftRatio: clamp(left / docWidth, 0, 1),
+      docCenterYRatio: clamp(centerY / docHeight, 0, 1),
+      docCenterXRatio: clamp(centerX / docWidth, 0, 1),
+    };
   }
 
   function restoreViewportAnchor(anchor) {
     if (!anchor) return;
     const el = document.getElementById(`page-${anchor.page}`);
-    if (!el) return;
-    state.currentPage = anchor.page;
-    const vRatio = typeof anchor.vRatio === 'number' ? clamp(anchor.vRatio, 0, 1) : (typeof anchor.ratio === 'number' ? clamp(anchor.ratio, 0, 1) : 0.5);
-    const hRatio = typeof anchor.hRatio === 'number' ? clamp(anchor.hRatio, 0, 1) : 0.5;
-    const targetCenterY = el.offsetTop + (el.offsetHeight * vRatio);
-    const targetCenterX = el.offsetLeft + (el.offsetWidth * hRatio);
-    window.scrollTo({ top: Math.max(0, targetCenterY - (window.innerHeight / 2)), left: Math.max(0, targetCenterX - (window.innerWidth / 2)), behavior: "auto" });
+    const maxTop = Math.max(document.documentElement.scrollHeight - window.innerHeight, 0);
+    const maxLeft = Math.max(document.documentElement.scrollWidth - window.innerWidth, 0);
+    if (el) {
+      state.currentPage = anchor.page;
+      const centerVRatio = typeof anchor.centerVRatio === "number"
+        ? clamp(anchor.centerVRatio, 0, 1)
+        : (typeof anchor.topRatio === "number" ? clamp(anchor.topRatio, 0, 1) : 0.5);
+      const centerHRatio = typeof anchor.centerHRatio === "number"
+        ? clamp(anchor.centerHRatio, 0, 1)
+        : (typeof anchor.leftRatio === "number" ? clamp(anchor.leftRatio, 0, 1) : 0.5);
+      const targetCenterY = el.offsetTop + (el.offsetHeight * centerVRatio);
+      const targetCenterX = el.offsetLeft + (el.offsetWidth * centerHRatio);
+      window.scrollTo({
+        top: clamp(targetCenterY - (window.innerHeight / 2), 0, maxTop),
+        left: clamp(targetCenterX - (window.innerWidth / 2), 0, maxLeft),
+        behavior: "auto",
+      });
+      return;
+    }
+    const docTop = typeof anchor.docTopRatio === "number"
+      ? clamp(maxTop * clamp(anchor.docTopRatio, 0, 1), 0, maxTop)
+      : clamp((maxTop * clamp(anchor.docCenterYRatio || 0, 0, 1)) - (window.innerHeight / 2), 0, maxTop);
+    const docLeft = typeof anchor.docLeftRatio === "number"
+      ? clamp(maxLeft * clamp(anchor.docLeftRatio, 0, 1), 0, maxLeft)
+      : clamp((maxLeft * clamp(anchor.docCenterXRatio || 0, 0, 1)) - (window.innerWidth / 2), 0, maxLeft);
+    window.scrollTo({
+      top: docTop,
+      left: docLeft,
+      behavior: "auto",
+    });
+  }
+
+  function restoreViewportAnchorStable(anchor) {
+    if (!anchor) return;
+    restoreViewportAnchor(anchor);
+    requestAnimationFrame(() => {
+      restoreViewportAnchor(anchor);
+    });
   }
 
   function replaceWithPlaceholder(pageNumber) {
@@ -686,10 +872,12 @@ input[type="range"] { accent-color: #4ade7f; }
   }
 
   function scheduleRenderWindow() {
+    if (state.suspendWindowRendering) return;
     if (state.renderPending) return;
     state.renderPending = true;
     requestAnimationFrame(() => {
       state.renderPending = false;
+      if (state.suspendWindowRendering) return;
       renderWindow();
     });
   }
@@ -769,6 +957,7 @@ input[type="range"] { accent-color: #4ade7f; }
       state.pageObserver = null;
     }
     const observer = new IntersectionObserver((entries) => {
+      if (state.suspendObserverUpdates) return;
       for (const entry of entries) {
         const target = entry.target;
         if (!target || !target.id) continue;
@@ -796,6 +985,67 @@ input[type="range"] { accent-color: #4ade7f; }
     state.pageObserver = observer;
   }
 
+  function updatePlaceholderSizes() {
+    const size = getEstimatedPageSize();
+    for (const child of container.children) {
+      if (!child || child.dataset?.placeholder !== "1") continue;
+      child.style.width = `${size.width}px`;
+      child.style.height = `${size.height}px`;
+    }
+  }
+
+  function getRefreshPageOrder() {
+    if (!state.pdfDoc) return [];
+    const total = state.pdfDoc.numPages;
+    const center = clamp(state.currentPage || 1, 1, total);
+    const preferredOrder = buildRenderOrder(total, center);
+    if (state.isSmallDoc) return preferredOrder;
+    const start = clamp(center - perf.renderBehind, 1, total);
+    const end = clamp(center + perf.renderAhead, 1, total);
+    const windowOrder = buildRenderOrder(end - start + 1, center - start + 1)
+      .map((idx) => idx + start - 1);
+    const visibleOrder = Array.from(state.visiblePages.keys())
+      .map((pageNo) => clamp(Number.parseInt(pageNo, 10) || 1, 1, total))
+      .filter((pageNo, idx, arr) => arr.indexOf(pageNo) === idx);
+    const renderedOrder = state.renderedPagesMru
+      .slice()
+      .reverse()
+      .map((pageNo) => clamp(Number.parseInt(pageNo, 10) || 1, 1, total));
+    return [...new Set([...visibleOrder, ...windowOrder, ...renderedOrder])];
+  }
+
+  async function rerenderRenderedPages({ showTransition = false } = {}) {
+    if (!state.pdfDoc) return;
+    updateCurrentPageFromScroll();
+    const pages = getRefreshPageOrder();
+    const anchor = getViewportAnchor();
+    beginRenderMutation();
+    const token = ++state.renderToken;
+    if (showTransition) startTransition();
+    updatePlaceholderSizes();
+    try {
+      for (const pageNo of pages) {
+        if (token !== state.renderToken) break;
+        const pageNode = await renderPage(pageNo);
+        if (token !== state.renderToken) break;
+        const existing = document.getElementById(`page-${pageNo}`);
+        if (existing && existing.parentNode === container) {
+          container.replaceChild(pageNode, existing);
+        }
+        if (state.pageObserver) state.pageObserver.observe(pageNode);
+        state.renderedPages.add(pageNo);
+        state.renderedPagesMru = state.renderedPagesMru.filter((p) => p !== pageNo);
+        state.renderedPagesMru.push(pageNo);
+      }
+    } finally {
+      restoreViewportAnchorStable(anchor);
+      updateDisplayScaleSnapshot();
+      endRenderMutation();
+      if (!state.isSmallDoc) scheduleRenderWindow();
+      if (showTransition && state.isTransitioning) endTransition();
+    }
+  }
+
   async function resetAndRender() {
     if (!state.pdfDoc) return;
     startTransition();
@@ -811,17 +1061,17 @@ input[type="range"] { accent-color: #4ade7f; }
     if (state.isSmallDoc) {
       await renderAllPages();
       initPageObserver();
-      restoreViewportAnchor(anchor);
+      restoreViewportAnchorStable(anchor);
+      updateDisplayScaleSnapshot();
       if (state.isTransitioning) endTransition();
       return;
     }
     initPageObserver();
-    restoreViewportAnchor(anchor);
-    scheduleRenderWindow();
-    // End transition after rendering completes (approximately 2 frames + render time)
-    setTimeout(() => {
-      if (state.isTransitioning) endTransition();
-    }, 300);
+    restoreViewportAnchorStable(anchor);
+    state.renderPending = false;
+    await renderWindow();
+    updateDisplayScaleSnapshot();
+    if (state.isTransitioning) endTransition();
   }
 
   function goToPage(n, smooth = true, recordHistory = true) {
@@ -1183,8 +1433,8 @@ input[type="range"] { accent-color: #4ade7f; }
 
       // rotate (r), zen toggle (z), and color toggle (c)
        if (e.key === 'r' && !e.ctrlKey) { state.rotation = (state.rotation + 90) % 360; await resetAndRender(); e.preventDefault(); return; }
-       if (e.key === 'z') { state.zenMode = !state.zenMode; updateModeClass(); await resetAndRender(); e.preventDefault(); return; }
-       if (e.key === 'c') { state.keepImagesColor = !state.keepImagesColor; await resetAndRender(); e.preventDefault(); return; }
+       if (e.key === 'z') { state.zenMode = !state.zenMode; updateModeClass(); await rerenderRenderedPages({ showTransition: true }); e.preventDefault(); return; }
+       if (e.key === 'c') { state.keepImagesColor = !state.keepImagesColor; await rerenderRenderedPages({ showTransition: true }); e.preventDefault(); return; }
        if (e.key === 'f') { state.pdfDoc.findController?.executeCommand('find'); e.preventDefault(); return; }
 
       // dual-page mode toggle
@@ -1218,9 +1468,9 @@ input[type="range"] { accent-color: #4ade7f; }
       if (e.key === 'F11') { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{}); else document.exitFullscreen().catch(()=>{}); e.preventDefault(); return; }
 
       // zoom = -
-       if (e.key === '=') { const anchor = getViewportAnchor(); state.scale = Math.min(state.scale * 1.1, 4); await resetAndRender(); restoreViewportAnchor(anchor); e.preventDefault(); return; }
-       if (e.key === '-') { const anchor = getViewportAnchor(); state.scale = Math.max(state.scale / 1.1, 0.1); await resetAndRender(); restoreViewportAnchor(anchor); e.preventDefault(); return; }
-       if (e.key === '0') { const anchor = getViewportAnchor(); state.scale = 1; await resetAndRender(); restoreViewportAnchor(anchor); e.preventDefault(); return; }
+       if (e.key === '=') { state.scale = Math.min(state.scale * 1.1, 4); await rerenderRenderedPages(); e.preventDefault(); return; }
+       if (e.key === '-') { state.scale = Math.max(state.scale / 1.1, 0.1); await rerenderRenderedPages(); e.preventDefault(); return; }
+       if (e.key === '0') { state.scale = 1; await rerenderRenderedPages(); e.preventDefault(); return; }
 
       // goto page prompt
       if (e.key === ':') { handleGotoPagePrompt(); e.preventDefault(); return; }
@@ -1253,7 +1503,6 @@ input[type="range"] { accent-color: #4ade7f; }
       perf.renderBehind = state.pdfDoc.numPages;
       perf.renderAhead = state.pdfDoc.numPages;
     } else if (state.largeDoc) {
-      state.compress = true;
       perf.renderBehind = Math.min(perf.renderBehind, 1);
       perf.renderAhead = Math.min(perf.renderAhead, 2);
       perf.maxCachePages = Math.min(perf.maxCachePages, 8);
@@ -1274,6 +1523,9 @@ input[type="range"] { accent-color: #4ade7f; }
       }
 
       bindEvents();
+      if (!state.svgSupported && state.svgEnabled) {
+        console.warn("PDF.js SVG rendering API unavailable; using canvas renderer.");
+      }
 
       function debounce(fn, wait) {
         let t = null;
@@ -1283,12 +1535,33 @@ input[type="range"] { accent-color: #4ade7f; }
         };
       }
 
+      const onWindowResize = debounce(async () => {
+        const scaleChanged = await adjustScaleToMode();
+        if (scaleChanged || hasDisplayScaleChange()) {
+          await rerenderRenderedPages();
+        } else {
+          updateDisplayScaleSnapshot();
+        }
+      }, 180);
+      const onViewportResize = debounce(async () => {
+        if (hasDisplayScaleChange()) {
+          await rerenderRenderedPages();
+        } else {
+          updateDisplayScaleSnapshot();
+        }
+      }, 110);
+
       // Initial adjust and set resize handler to auto-fill on window changes.
       const firstPage = await getPdfPage(1);
       state.baseViewport = firstPage.getViewport({ scale: 1, rotation: 0 });
       await adjustScaleToMode();
-      const onResize = debounce(async () => { const changed = await adjustScaleToMode(); if (changed) await resetAndRender(); }, 180);
-      window.addEventListener('resize', onResize);
+      state.baseDevicePixelRatio = Math.max(window.devicePixelRatio || 1, 1);
+      updateDisplayScaleSnapshot();
+      window.addEventListener('resize', onWindowResize);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', onViewportResize);
+        window.visualViewport.addEventListener('scroll', onViewportResize, { passive: true });
+      }
 
       await resetAndRender();
     } catch (err) {
