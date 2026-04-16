@@ -319,6 +319,7 @@ input[type="range"] { accent-color: #4ade7f; }
     lastSvgOversample: 1,
     suspendWindowRendering: false,
     suspendObserverUpdates: false,
+    renderMutationDepth: 0,
   };
 
   const container = document.getElementById("viewerContainer");
@@ -509,6 +510,19 @@ input[type="range"] { accent-color: #4ade7f; }
     return Math.max(dpr * viewportScale, 1);
   }
 
+  function beginRenderMutation() {
+    state.renderMutationDepth += 1;
+    state.suspendWindowRendering = true;
+    state.suspendObserverUpdates = true;
+  }
+
+  function endRenderMutation() {
+    state.renderMutationDepth = Math.max(0, state.renderMutationDepth - 1);
+    const suspended = state.renderMutationDepth > 0;
+    state.suspendWindowRendering = suspended;
+    state.suspendObserverUpdates = suspended;
+  }
+
   function getRenderBackend() {
     if (!state.svgEnabled || !state.svgSupported) return "canvas";
     return "svg";
@@ -532,9 +546,17 @@ input[type="range"] { accent-color: #4ade7f; }
     const baseDpr = Math.max(state.baseDevicePixelRatio || dpr, 1);
     const dprZoom = dpr / baseDpr;
     const effectiveZoom = Math.max(viewportScale, dprZoom, 1);
-    if (!Number.isFinite(effectiveZoom) || effectiveZoom <= 1.01) return 1;
-    const cap = state.largeDoc ? 1.75 : 2.25;
+    if (!Number.isFinite(effectiveZoom) || effectiveZoom <= 1.005) return 1;
+    const cap = getSvgOversampleCap();
     return clamp(effectiveZoom, 1, cap);
+  }
+
+  function getSvgOversampleCap() {
+    const pages = state.pdfDoc?.numPages || 1;
+    if (state.largeDoc) return state.zenMode ? 2.4 : 2;
+    if (pages >= 120) return state.zenMode ? 3.25 : 2.75;
+    if (pages >= 60) return state.zenMode ? 3.75 : 3.25;
+    return state.zenMode ? 4.5 : 4;
   }
 
   function updateDisplayScaleSnapshot() {
@@ -546,9 +568,9 @@ input[type="range"] { accent-color: #4ade7f; }
 
   function hasDisplayScaleChange({
     outputThreshold = 0.08,
-    viewportThreshold = 0.03,
+    viewportThreshold = 0.02,
     dprThreshold = 0.01,
-    svgThreshold = 0.03,
+    svgThreshold = 0.015,
   } = {}) {
     const outputChanged = Math.abs(getOutputScale() - state.lastOutputScale) > outputThreshold;
     const viewportChanged = Math.abs(getViewportScale() - state.lastViewportScale) > viewportThreshold;
@@ -708,10 +730,11 @@ input[type="range"] { accent-color: #4ade7f; }
   }
 
   function getViewportAnchor() {
-    if (!state.pdfDoc) return { page: state.currentPage || 1, topRatio: 0, leftRatio: 0 };
+    if (!state.pdfDoc) return { page: state.currentPage || 1, centerVRatio: 0.5, centerHRatio: 0.5 };
     const top = window.scrollY;
     const left = window.scrollX;
     const centerY = window.scrollY + window.innerHeight / 2;
+    const centerX = window.scrollX + window.innerWidth / 2;
     let page = state.currentPage || 1;
     let bestEl = null;
     let bestDist = Infinity;
@@ -731,20 +754,24 @@ input[type="range"] { accent-color: #4ade7f; }
     if (!bestEl) {
       return {
         page,
-        topRatio: 0,
-        leftRatio: 0,
+        centerVRatio: 0.5,
+        centerHRatio: 0.5,
         docTopRatio: clamp(top / docHeight, 0, 1),
         docLeftRatio: clamp(left / docWidth, 0, 1),
+        docCenterYRatio: clamp(centerY / docHeight, 0, 1),
+        docCenterXRatio: clamp(centerX / docWidth, 0, 1),
       };
     }
-    const topRatio = clamp((top - bestEl.offsetTop) / Math.max(bestEl.offsetHeight, 1), 0, 1);
-    const leftRatio = clamp((left - bestEl.offsetLeft) / Math.max(bestEl.offsetWidth, 1), 0, 1);
+    const centerVRatio = clamp((centerY - bestEl.offsetTop) / Math.max(bestEl.offsetHeight, 1), 0, 1);
+    const centerHRatio = clamp((centerX - bestEl.offsetLeft) / Math.max(bestEl.offsetWidth, 1), 0, 1);
     return {
       page,
-      topRatio,
-      leftRatio,
+      centerVRatio,
+      centerHRatio,
       docTopRatio: clamp(top / docHeight, 0, 1),
       docLeftRatio: clamp(left / docWidth, 0, 1),
+      docCenterYRatio: clamp(centerY / docHeight, 0, 1),
+      docCenterXRatio: clamp(centerX / docWidth, 0, 1),
     };
   }
 
@@ -755,26 +782,30 @@ input[type="range"] { accent-color: #4ade7f; }
     const maxLeft = Math.max(document.documentElement.scrollWidth - window.innerWidth, 0);
     if (el) {
       state.currentPage = anchor.page;
-      const topRatio = typeof anchor.topRatio === "number"
-        ? clamp(anchor.topRatio, 0, 1)
-        : (typeof anchor.vRatio === "number" ? clamp(anchor.vRatio, 0, 1) : 0);
-      const leftRatio = typeof anchor.leftRatio === "number"
-        ? clamp(anchor.leftRatio, 0, 1)
-        : (typeof anchor.hRatio === "number" ? clamp(anchor.hRatio, 0, 1) : 0);
-      const targetTop = el.offsetTop + (el.offsetHeight * topRatio);
-      const targetLeft = el.offsetLeft + (el.offsetWidth * leftRatio);
+      const centerVRatio = typeof anchor.centerVRatio === "number"
+        ? clamp(anchor.centerVRatio, 0, 1)
+        : (typeof anchor.topRatio === "number" ? clamp(anchor.topRatio, 0, 1) : 0.5);
+      const centerHRatio = typeof anchor.centerHRatio === "number"
+        ? clamp(anchor.centerHRatio, 0, 1)
+        : (typeof anchor.leftRatio === "number" ? clamp(anchor.leftRatio, 0, 1) : 0.5);
+      const targetCenterY = el.offsetTop + (el.offsetHeight * centerVRatio);
+      const targetCenterX = el.offsetLeft + (el.offsetWidth * centerHRatio);
       window.scrollTo({
-        top: clamp(targetTop, 0, maxTop),
-        left: clamp(targetLeft, 0, maxLeft),
+        top: clamp(targetCenterY - (window.innerHeight / 2), 0, maxTop),
+        left: clamp(targetCenterX - (window.innerWidth / 2), 0, maxLeft),
         behavior: "auto",
       });
       return;
     }
-    const docTopRatio = typeof anchor.docTopRatio === "number" ? clamp(anchor.docTopRatio, 0, 1) : 0;
-    const docLeftRatio = typeof anchor.docLeftRatio === "number" ? clamp(anchor.docLeftRatio, 0, 1) : 0;
+    const docTop = typeof anchor.docTopRatio === "number"
+      ? clamp(maxTop * clamp(anchor.docTopRatio, 0, 1), 0, maxTop)
+      : clamp((maxTop * clamp(anchor.docCenterYRatio || 0, 0, 1)) - (window.innerHeight / 2), 0, maxTop);
+    const docLeft = typeof anchor.docLeftRatio === "number"
+      ? clamp(maxLeft * clamp(anchor.docLeftRatio, 0, 1), 0, maxLeft)
+      : clamp((maxLeft * clamp(anchor.docCenterXRatio || 0, 0, 1)) - (window.innerWidth / 2), 0, maxLeft);
     window.scrollTo({
-      top: clamp(maxTop * docTopRatio, 0, maxTop),
-      left: clamp(maxLeft * docLeftRatio, 0, maxLeft),
+      top: docTop,
+      left: docLeft,
       behavior: "auto",
     });
   }
@@ -988,10 +1019,7 @@ input[type="range"] { accent-color: #4ade7f; }
     updateCurrentPageFromScroll();
     const pages = getRefreshPageOrder();
     const anchor = getViewportAnchor();
-    const previousSuspend = state.suspendWindowRendering;
-    const previousObserverSuspend = state.suspendObserverUpdates;
-    state.suspendWindowRendering = true;
-    state.suspendObserverUpdates = true;
+    beginRenderMutation();
     const token = ++state.renderToken;
     if (showTransition) startTransition();
     updatePlaceholderSizes();
@@ -1012,8 +1040,7 @@ input[type="range"] { accent-color: #4ade7f; }
     } finally {
       restoreViewportAnchorStable(anchor);
       updateDisplayScaleSnapshot();
-      state.suspendWindowRendering = previousSuspend;
-      state.suspendObserverUpdates = previousObserverSuspend;
+      endRenderMutation();
       if (!state.isSmallDoc) scheduleRenderWindow();
       if (showTransition && state.isTransitioning) endTransition();
     }
@@ -1041,12 +1068,10 @@ input[type="range"] { accent-color: #4ade7f; }
     }
     initPageObserver();
     restoreViewportAnchorStable(anchor);
-    scheduleRenderWindow();
+    state.renderPending = false;
+    await renderWindow();
     updateDisplayScaleSnapshot();
-    // End transition after rendering completes (approximately 2 frames + render time)
-    setTimeout(() => {
-      if (state.isTransitioning) endTransition();
-    }, 300);
+    if (state.isTransitioning) endTransition();
   }
 
   function goToPage(n, smooth = true, recordHistory = true) {
@@ -1408,8 +1433,8 @@ input[type="range"] { accent-color: #4ade7f; }
 
       // rotate (r), zen toggle (z), and color toggle (c)
        if (e.key === 'r' && !e.ctrlKey) { state.rotation = (state.rotation + 90) % 360; await resetAndRender(); e.preventDefault(); return; }
-       if (e.key === 'z') { state.zenMode = !state.zenMode; updateModeClass(); await resetAndRender(); e.preventDefault(); return; }
-       if (e.key === 'c') { state.keepImagesColor = !state.keepImagesColor; await resetAndRender(); e.preventDefault(); return; }
+       if (e.key === 'z') { state.zenMode = !state.zenMode; updateModeClass(); await rerenderRenderedPages({ showTransition: true }); e.preventDefault(); return; }
+       if (e.key === 'c') { state.keepImagesColor = !state.keepImagesColor; await rerenderRenderedPages({ showTransition: true }); e.preventDefault(); return; }
        if (e.key === 'f') { state.pdfDoc.findController?.executeCommand('find'); e.preventDefault(); return; }
 
       // dual-page mode toggle
@@ -1524,7 +1549,7 @@ input[type="range"] { accent-color: #4ade7f; }
         } else {
           updateDisplayScaleSnapshot();
         }
-      }, 140);
+      }, 110);
 
       // Initial adjust and set resize handler to auto-fill on window changes.
       const firstPage = await getPdfPage(1);
@@ -1535,6 +1560,7 @@ input[type="range"] { accent-color: #4ade7f; }
       window.addEventListener('resize', onWindowResize);
       if (window.visualViewport) {
         window.visualViewport.addEventListener('resize', onViewportResize);
+        window.visualViewport.addEventListener('scroll', onViewportResize, { passive: true });
       }
 
       await resetAndRender();
