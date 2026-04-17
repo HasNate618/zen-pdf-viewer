@@ -26,7 +26,8 @@ html, body {
   position: fixed;
   bottom: 22px;
   left: 22px;
-  display: flex;
+  /* Hidden by default to avoid flicker; only shown by JS when the user hasn't dismissed it */
+  display: none;
   align-items: center;
   gap: 10px;
   background: rgba(18,17,17,0.88);
