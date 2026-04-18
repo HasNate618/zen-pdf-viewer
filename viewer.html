@@ -293,8 +293,8 @@ input[type="range"] { accent-color: #4ade7f; }
   };
 
   const perf = {
-    renderBehind: 4,
-    renderAhead: 8,
+    renderBehind: 12,
+    renderAhead: 16,
     maxCachePages: 24,
     largeDocPages: 300,
     largeDocMaxDpr: 1.75,
@@ -1519,8 +1519,6 @@ input[type="range"] { accent-color: #4ade7f; }
       perf.renderBehind = state.pdfDoc.numPages;
       perf.renderAhead = state.pdfDoc.numPages;
     } else if (state.largeDoc) {
-      perf.renderBehind = Math.min(perf.renderBehind, 1);
-      perf.renderAhead = Math.min(perf.renderAhead, 2);
       perf.maxCachePages = Math.min(perf.maxCachePages, 8);
     }
 
