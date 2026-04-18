@@ -292,7 +292,7 @@ The launcher copies the PDF into a temporary directory, starts a local HTTP serv
 | `d` | Toggle dual-page view |
 | `p` | Toggle pageless + compression mode |
 | `=` / `-` | Zoom in / out |
-| `0` | Reset zoom to 100% |
+| `0` | Reset zoom to fit the page width |
 | `R` | Reload document |
 | `F11` | Toggle fullscreen |
 | `q` | Quit / close tab |

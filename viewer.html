@@ -272,6 +272,7 @@ input[type="range"] { accent-color: #4ade7f; }
       <div class="keybind-key">c</div><div class="keybind-desc">Toggle color in Zen mode</div><div class="keybind-key">f</div><div class="keybind-desc">Find in document</div>
       <div class="keybind-key">p</div><div class="keybind-desc">Toggle pageless & compression</div><div class="keybind-key">d</div><div class="keybind-desc">Toggle dual page view</div>
       <div class="keybind-key">F11</div><div class="keybind-desc">Toggle fullscreen mode</div><div class="keybind-key">=, -</div><div class="keybind-desc">Zoom in / out</div>
+      <div class="keybind-key">0</div><div class="keybind-desc">Reset zoom to fit the page width</div>
       <div class="keybind-key">R</div><div class="keybind-desc">Reload document</div><div class="keybind-key">q</div><div class="keybind-desc">Quit</div>
     </div>
     <div style="text-align:right; margin-top:8px"><button id="keybindsCloseBtn">Close</button></div>
@@ -1480,7 +1481,12 @@ input[type="range"] { accent-color: #4ade7f; }
       // zoom = -
        if (e.key === '=') { state.scale = Math.min(state.scale * 1.1, 4); await rerenderRenderedPages(); e.preventDefault(); return; }
        if (e.key === '-') { state.scale = Math.max(state.scale / 1.1, 0.1); await rerenderRenderedPages(); e.preventDefault(); return; }
-       if (e.key === '0') { state.scale = 1; await rerenderRenderedPages(); e.preventDefault(); return; }
+       if (e.key === '0') {
+         const scaleChanged = await adjustScaleToMode();
+         if (scaleChanged) await rerenderRenderedPages();
+         e.preventDefault();
+         return;
+       }
 
       // goto page prompt
       if (e.key === ':') { handleGotoPagePrompt(); e.preventDefault(); return; }
