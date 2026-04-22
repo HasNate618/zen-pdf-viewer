@@ -281,6 +281,8 @@ The launcher copies the PDF into a temporary directory, starts a local HTTP serv
 | `Space` / `b` | Page down / page up |
 | `gg` | Go to first page |
 | `G` | Go to last page |
+| `1-9` | Go to bookmark slot (defaults to pages 1-9) |
+| `Alt+1-9` | Assign the current viewport position to a bookmark slot |
 | `/` | Go to page number (prompt) |
 | `P` | Snap to nearest page |
 | `H` / `L` | Scroll to top / bottom of current page |

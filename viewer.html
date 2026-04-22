@@ -268,6 +268,7 @@ input[type="range"] { accent-color: #4ade7f; }
       <div class="keybind-key">g, G</div><div class="keybind-desc">Goto first or last page</div><div class="keybind-key">P</div><div class="keybind-desc">Snap to the current page</div>
       <div class="keybind-key">H, L</div><div class="keybind-desc">Goto top or bottom of current page</div><div class="keybind-key">^o, ^i</div><div class="keybind-desc">Move backward/forward through jump list</div>
       <div class="keybind-key">Escape, ?</div><div class="keybind-desc">Open/close keybinds viewer</div><div class="keybind-key">:</div><div class="keybind-desc">Goto page number</div>
+      <div class="keybind-key">1-9</div><div class="keybind-desc">Go to bookmark slots (default pages 1-9)</div><div class="keybind-key">Alt+1-9</div><div class="keybind-desc">Assign the current viewport position to a bookmark slot</div>
       <div class="keybind-key">r</div><div class="keybind-desc">Rotate by 90 degrees</div><div class="keybind-key">z</div><div class="keybind-desc">Toggle Zen mode</div>
       <div class="keybind-key">c</div><div class="keybind-desc">Toggle color in Zen mode</div><div class="keybind-key">f</div><div class="keybind-desc">Find in document</div>
       <div class="keybind-key">p</div><div class="keybind-desc">Toggle pageless & compression</div><div class="keybind-key">d</div><div class="keybind-desc">Toggle dual page view</div>
@@ -354,6 +355,7 @@ input[type="range"] { accent-color: #4ade7f; }
   state.isSmallDoc = false;
   state.isTransitioning = false;
   state.renderedPagesMru = [];  // MRU list for page cache eviction
+  state.bookmarks = new Map();
 
   function clamp(v, min, max) {
     return Math.min(max, Math.max(min, v));
@@ -1097,6 +1099,30 @@ input[type="range"] { accent-color: #4ade7f; }
     window.scrollTo({ top: Math.max(0, el.offsetTop - 15), behavior: smooth ? "smooth" : "auto" });
   }
 
+  function getBookmarkTarget(slot) {
+    const total = state.pdfDoc?.numPages || 1;
+    const assigned = state.bookmarks.get(slot);
+    if (assigned) return assigned;
+    return { kind: "page", page: Math.min(slot, total) };
+  }
+
+  function setBookmark(slot) {
+    if (!state.pdfDoc) return;
+    const anchor = getViewportAnchor();
+    anchor.page = clamp(anchor.page || state.currentPage || slot, 1, state.pdfDoc.numPages || 1);
+    state.bookmarks.set(slot, anchor);
+  }
+
+  function goToBookmark(slot) {
+    const target = getBookmarkTarget(slot);
+    if (!target) return;
+    if (target.kind === "page") {
+      goToPage(target.page);
+      return;
+    }
+    restoreViewportAnchorStable(target);
+  }
+
   function bindEvents() {
     // Toast handling (cookie-based so it persists even when localhost port changes)
     try {
@@ -1383,6 +1409,13 @@ input[type="range"] { accent-color: #4ade7f; }
       }
 
       const keyLower = typeof e.key === 'string' ? e.key.toLowerCase() : '';
+      const bookmarkKey = /^[1-9]$/.test(e.key);
+      if (e.altKey && !e.ctrlKey && !e.metaKey && bookmarkKey) {
+        setBookmark(Number.parseInt(e.key, 10));
+        e.preventDefault();
+        return;
+      }
+
       const allowCtrlShortcut = e.ctrlKey && !e.altKey && !e.metaKey && ['d', 'u', 't', 'y', 'o', 'i'].includes(keyLower);
       if ((e.ctrlKey || e.altKey || e.metaKey) && !allowCtrlShortcut) {
         return;
@@ -1481,12 +1514,18 @@ input[type="range"] { accent-color: #4ade7f; }
       // zoom = -
        if (e.key === '=') { state.scale = Math.min(state.scale * 1.1, 4); await rerenderRenderedPages(); e.preventDefault(); return; }
        if (e.key === '-') { state.scale = Math.max(state.scale / 1.1, 0.1); await rerenderRenderedPages(); e.preventDefault(); return; }
-       if (e.key === '0') {
+      if (e.key === '0') {
          const scaleChanged = await adjustScaleToMode();
          if (scaleChanged) await rerenderRenderedPages();
          e.preventDefault();
          return;
        }
+
+      if (bookmarkKey) {
+        goToBookmark(Number.parseInt(e.key, 10));
+        e.preventDefault();
+        return;
+      }
 
       // goto page prompt
       if (e.key === ':') { handleGotoPagePrompt(); e.preventDefault(); return; }
@@ -1514,6 +1553,7 @@ input[type="range"] { accent-color: #4ade7f; }
 
     state.largeDoc = state.pdfDoc.numPages >= perf.largeDocPages;
     state.isSmallDoc = state.pdfDoc.numPages <= perf.smallDocThreshold;
+    state.bookmarks = new Map();
     
     if (state.isSmallDoc) {
       perf.renderBehind = state.pdfDoc.numPages;

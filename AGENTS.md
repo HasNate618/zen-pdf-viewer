@@ -50,6 +50,7 @@ Toggle dual-page mode with d and look for layout alignment issues; the CSS grid 
 Enable Zen mode, toggle color preservation (c), and check Zen rendering behaves as expected (SVG filter path or canvas fallback path).
 Resize the browser window aggressively to trigger the resize debounce and verify SVG sharpness/canvas fallback DPI behavior stays appropriate.
 Try page jumps via gg and G to make sure the jump-back and jump-forward stacks behave predictably.
+Use Alt+1-9 to save a bookmark slot and 1-9 to jump back to that position; verify the target still lands correctly after a resize.
 Trigger the toast dismissal flow and make sure cookies suppress repeate invites; check the console for suppressed exceptions.
 Open the keybind overlay (Esc) and ensure compactKeybindsTable still renders clean table markup.
 Use pointer drags across the text layer to confirm selection logic naturally prevents jumps when leaving text.
