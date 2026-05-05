@@ -213,6 +213,22 @@ html, body {
   -webkit-user-select: text;
 }
 .textLayer ::selection { background: rgba(74, 222, 127, 0.35); }
+.annotationLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.annotationLayer a {
+  position: absolute;
+  display: block;
+  pointer-events: auto;
+  background: transparent;
+  text-decoration: none;
+  color: transparent;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
 button,
 input,
 label { color: inherit; font: inherit; }
@@ -486,6 +502,111 @@ input[type="range"] { accent-color: #4ade7f; }
     }
   }
 
+  function viewportRectToCssRect(viewport, rect) {
+    if (!viewport || !Array.isArray(rect) || rect.length < 4) return null;
+    const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(rect);
+    const left = Math.min(x1, x2);
+    const top = Math.min(y1, y2);
+    const width = Math.max(Math.abs(x2 - x1), 1);
+    const height = Math.max(Math.abs(y2 - y1), 1);
+    return { left, top, width, height };
+  }
+
+  function quadPointsToCssRects(viewport, quadPoints) {
+    if (!viewport || !Array.isArray(quadPoints) || quadPoints.length < 8) return [];
+    const rects = [];
+    for (let i = 0; i + 7 < quadPoints.length; i += 8) {
+      const quad = [
+        quadPoints[i],
+        quadPoints[i + 1],
+        quadPoints[i + 2],
+        quadPoints[i + 3],
+        quadPoints[i + 4],
+        quadPoints[i + 5],
+        quadPoints[i + 6],
+        quadPoints[i + 7],
+      ];
+      const points = [];
+      for (let j = 0; j < quad.length; j += 2) {
+        const converted = viewport.convertToViewportPoint(quad[j], quad[j + 1]);
+        points.push(converted[0], converted[1]);
+      }
+      const xs = [];
+      const ys = [];
+      for (let j = 0; j < points.length; j += 2) {
+        xs.push(points[j]);
+        ys.push(points[j + 1]);
+      }
+      const left = Math.min(...xs);
+      const top = Math.min(...ys);
+      const width = Math.max(Math.max(...xs) - left, 1);
+      const height = Math.max(Math.max(...ys) - top, 1);
+      rects.push({ left, top, width, height });
+    }
+    return rects;
+  }
+
+  async function goToAnnotationDestination(dest) {
+    if (!state.pdfDoc || !dest) return;
+    let resolved = dest;
+    if (typeof resolved === "string") {
+      resolved = await state.pdfDoc.getDestination(resolved);
+    }
+    if (!Array.isArray(resolved) || resolved.length === 0) return;
+    const ref = resolved[0];
+    if (!ref || typeof state.pdfDoc.getPageIndex !== "function") return;
+    const pageIndex = await state.pdfDoc.getPageIndex(ref);
+    if (Number.isFinite(pageIndex)) {
+      goToPage(pageIndex + 1);
+    }
+  }
+
+  async function renderAnnotationLayer(page, viewport, shell) {
+    const annotations = await page.getAnnotations({ intent: "display" });
+    const links = annotations.filter((annotation) => annotation && annotation.subtype === "Link");
+    if (links.length === 0) return;
+
+    const annotationLayer = document.createElement("div");
+    annotationLayer.className = "annotationLayer";
+
+    for (const annotation of links) {
+      const url = annotation.url || annotation.unsafeUrl;
+      const rects = annotation.quadPoints && annotation.quadPoints.length >= 8
+        ? quadPointsToCssRects(viewport, annotation.quadPoints)
+        : [viewportRectToCssRect(viewport, annotation.rect)];
+      for (const rect of rects) {
+        if (!rect) continue;
+        const link = document.createElement("a");
+        link.style.left = `${rect.left}px`;
+        link.style.top = `${rect.top}px`;
+        link.style.width = `${rect.width}px`;
+        link.style.height = `${rect.height}px`;
+        link.tabIndex = -1;
+        link.setAttribute("aria-label", annotation.contents || annotation.title || "Link");
+        if (url) {
+          link.href = url;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.title = url;
+        } else if (annotation.dest) {
+          link.href = "#";
+          link.title = annotation.contents || annotation.title || "Link";
+          link.addEventListener("click", async (ev) => {
+            ev.preventDefault();
+            await goToAnnotationDestination(annotation.dest);
+          });
+        } else {
+          continue;
+        }
+        annotationLayer.appendChild(link);
+      }
+    }
+
+    if (annotationLayer.childElementCount > 0) {
+      shell.appendChild(annotationLayer);
+    }
+  }
+
   async function getPdfPage(pageNumber) {
     if (state.pageCache.has(pageNumber)) {
       const cached = state.pageCache.get(pageNumber);
@@ -740,6 +861,7 @@ input[type="range"] { accent-color: #4ade7f; }
 
     await renderTextLayer(page, layoutViewport, textLayer);
     shell.appendChild(textLayer);
+    await renderAnnotationLayer(page, layoutViewport, shell);
     return shell;
   }
 
