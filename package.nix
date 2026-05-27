@@ -38,6 +38,18 @@ stdenv.mkDerivation {
       --set ZEN_PDF_VIEWER_DATA_DIR "$out/share/zen-pdf-viewer" \
       --prefix PATH : ${lib.makeBinPath runtimeInputs}
 
+    # Desktop entry (Linux)
+    mkdir -p "$out/share/applications"
+    cat > "$out/share/applications/zen-pdf-viewer.desktop" <<EOF
+[Desktop Entry]
+Name=Zen PDF Viewer
+Exec=$out/bin/zen-pdf-viewer %U
+Terminal=false
+Type=Application
+MimeType=application/pdf;
+Categories=Office;Viewer;Utility;
+EOF
+
     runHook postInstall
   '';
 
