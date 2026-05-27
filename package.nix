@@ -32,6 +32,7 @@ stdenv.mkDerivation {
     mkdir -p "$out/share/zen-pdf-viewer" "$out/bin"
     cp viewer.html "$out/share/zen-pdf-viewer/"
     cp launch.sh "$out/bin/zen-pdf-viewer"
+    chmod +x "$out/bin/zen-pdf-viewer"
 
     wrapProgram "$out/bin/zen-pdf-viewer" \
       --set ZEN_PDF_VIEWER_DATA_DIR "$out/share/zen-pdf-viewer" \
