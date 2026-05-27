@@ -39,8 +39,8 @@ fi
 
 # --- locate viewer -----------------------------------------------------------
 
-# Linux default; macOS fallback
-PDFJS_DIR="$HOME/.local/share/zen-pdf-viewer"
+# Nix and manual installs can override the data directory.
+PDFJS_DIR="${ZEN_PDF_VIEWER_DATA_DIR:-$HOME/.local/share/zen-pdf-viewer}"
 if [ ! -f "$PDFJS_DIR/viewer.html" ] && [ -d "$HOME/Library" ]; then
   PDFJS_DIR="$HOME/Library/Application Support/zen-pdf-viewer"
 fi

@@ -21,6 +21,7 @@ A lightweight, keyboard-first PDF viewer built on PDF.js. It runs entirely in yo
 
 - [Requirements](#requirements)
 - [Installation](#installation)
+  - [Nix](#nix)
   - [Linux](#linux)
   - [macOS](#macos)
   - [Windows](#windows)
@@ -51,6 +52,49 @@ A lightweight, keyboard-first PDF viewer built on PDF.js. It runs entirely in yo
 ---
 
 ## Installation
+
+### Nix
+
+Install from the flake (requires [flakes](https://nix.dev/concepts/flakes.html) enabled):
+
+```bash
+nix profile install github:HasNate618/zen-pdf-viewer
+```
+
+Or build and run from a local checkout:
+
+```bash
+git clone https://github.com/HasNate618/zen-pdf-viewer.git
+cd zen-pdf-viewer
+nix run . -- /path/to/document.pdf
+```
+
+For a one-off install into your profile:
+
+```bash
+nix profile install .
+```
+
+The package installs `zen-pdf-viewer` on your `PATH` with `viewer.html` bundled in the Nix store. Python 3, curl, and `xdg-open` (Linux) are wrapped automatically.
+
+**NixOS / home-manager** — add the flake as an input and reference `packages.${pkgs.system}.default`, or use an overlay:
+
+```nix
+# flake.nix inputs
+zen-pdf-viewer.url = "github:HasNate618/zen-pdf-viewer";
+
+# configuration
+environment.systemPackages = [ inputs.zen-pdf-viewer.packages.${pkgs.system}.default ];
+```
+
+**Dev shell** — for hacking on `viewer.html` without installing:
+
+```bash
+nix develop
+python3 -m http.server 8000 --bind 127.0.0.1
+```
+
+---
 
 ### Linux
 
