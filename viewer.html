@@ -15,111 +15,36 @@ html, body {
   user-select: none;
   -webkit-user-select: none;
 }
-/* keyboard-only controls + improved overlays */
+/* keyboard-only controls */
 #viewerContainer {
   padding: 8px 8px 12px;
   user-select: none;
   -webkit-user-select: none;
 }
 
-#zenToast {
-  position: fixed;
-  bottom: 22px;
-  left: 22px;
-  /* Hidden by default to avoid flicker; only shown by JS when the user hasn't dismissed it */
-  display: none;
-  align-items: center;
-  gap: 10px;
-  background: rgba(18,17,17,0.88);
-  color: #dcfce7;
-  padding: 8px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(220,252,231,0.06);
-  box-shadow: 0 8px 24px rgba(2,6,23,0.6);
-  z-index: 1000;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  font-size: 13px;
-  max-width: min(420px, calc(100vw - 48px));
-}
-#zenToast .toast-content { display:flex; gap:8px; align-items:center; width:100%; }
-#zenToast .toast-key { background: rgba(255,255,255,0.06); padding: 4px 8px; border-radius:6px; font-weight:600; font-family: monospace; }
-#zenToast .toast-actions { margin-left:auto; display:flex; gap:8px; align-items:center; }
-#zenToast label { font-size:13px; display:flex; align-items:center; gap:6px; color: #cdecd9; }
-#zenToast button { background: transparent; border: 1px solid rgba(220,252,231,0.08); color: inherit; padding:5px 8px; border-radius:8px; cursor:pointer; }
-
-@keyframes popIn {
-  from {
-    opacity: 0;
-    transform: scale(0.85);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes popOut {
-  from {
-    opacity: 1;
-    transform: scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: scale(0.85);
-  }
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes fadeOut {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-
-@keyframes transitionOverlay {
-  from { opacity: 0; }
-  to { opacity: 0.15; }
-}
-
-#transitionOverlay {
+.keybinds-panel {
   position: fixed;
   inset: 0;
-  background: rgba(18,18,20,0.15);
-  z-index: 999;
-  pointer-events: none;
-  display: none;
-  animation: transitionOverlay 0.25s ease-out;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  z-index: 1001;
+  padding: clamp(8px, 3vw, 40px);
+  box-sizing: border-box;
 }
-
-#transitionOverlay.active {
-  display: block;
-}
-
-.overlay { position: fixed; inset: 0; display:flex; align-items:center; justify-content:center; background: rgba(18,18,20,0.45); z-index:1001; padding: clamp(8px, 3vw, 40px); box-sizing: border-box; animation: fadeIn 0.25s ease-out; }
-.overlay[hidden] { display:none; }
-.overlay.closing { animation: fadeOut 0.15s ease-out forwards; }
-.overlay-inner {
+.keybinds-panel[hidden] { display: none; }
+.keybinds-panel-inner {
   position: relative;
-  background: rgba(30,30,35,0.85);
+  background: transparent;
   color: inherit;
   padding: 20px 24px;
-  border-radius: 14px;
   width: min(1100px, 100%);
   max-height: 88vh;
-  overflow:auto;
-  border:1px solid rgba(255,255,255,0.08);
-  box-shadow: 0 10px 30px rgba(2,6,23,0.55);
-  backdrop-filter: blur(12px) saturate(180%);
-  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  overflow: auto;
   font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-  animation: popIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.overlay-inner.closing { animation: popOut 0.15s cubic-bezier(0.4, 0, 1, 1) forwards; }
-.overlay h2 { margin-top:0; margin-bottom:12px; font-size:18px; font-weight:600; color: #f1f5f9; }
+.keybinds-panel h2 { margin-top: 0; margin-bottom: 12px; font-size: 18px; font-weight: 600; color: #f1f5f9; }
 .keybinds-grid { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 0 20px; width: 100%; }
 @media (max-width: 640px) {
   .keybinds-grid { grid-template-columns: auto 1fr; }
@@ -136,8 +61,8 @@ html, body {
 .keybind-desc { color: #e6eef0; font-size:14px; line-height:1.45; opacity:0.95; padding: 7px 8px 7px 0; border-top: 1px solid rgba(255,255,255,0.03); display: flex; align-items: center; }
 .keybinds-grid > .keybind-desc:nth-child(-n+4) { border-top: none; }
 .keycap { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', monospace; font-weight: 700; color: #fff; font-size: 13px; background: rgba(255,255,255,0.09); border: 1px solid rgba(255,255,255,0.14); padding: 3px 8px; border-radius: 6px; display: inline-block; white-space: nowrap; }
-.overlay .close { position:absolute; top:8px; right:8px; background:transparent; color: #e6eef0; border: 0; font-size:20px; cursor:pointer; padding:6px 8px; border-radius:6px; }
-.overlay .close:hover { background: rgba(255,255,255,0.05); }
+.keybinds-panel .close { position: absolute; top: 8px; right: 8px; background: transparent; color: #e6eef0; border: 0; font-size: 20px; cursor: pointer; padding: 6px 8px; border-radius: 6px; }
+.keybinds-panel .close:hover { background: rgba(255,255,255,0.05); }
 
 
 .pageless #viewerContainer {
@@ -265,16 +190,8 @@ input[type="range"] { accent-color: #4ade7f; }
 </style>
 </head>
 <body>
-<div id="zenToast" hidden>
-  <div class="toast-content">
-    <span>Press Esc to open keybinds</span>
-    <label><input id="toastDontShow" type="checkbox"> Don't show again</label>
-    <button id="toastClose">OK</button>
-  </div>
-</div>
-
-<div id="keybindsOverlay" class="overlay" hidden>
-  <div class="overlay-inner">
+<div id="keybindsOverlay" class="keybinds-panel" hidden>
+  <div class="keybinds-panel-inner">
     <button id="keybindsClose" class="close" aria-label="Close">×</button>
     <h2>Keybindings</h2>
     <div id="keybindsText" class="keybinds-grid" role="grid" aria-label="Keybindings">
@@ -296,7 +213,6 @@ input[type="range"] { accent-color: #4ade7f; }
   </div>
 </div>
 <div id="error"></div>
-<div id="transitionOverlay"></div>
 <div id="viewerContainer"></div>
 
 <script src="https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.min.js"></script>
@@ -344,11 +260,7 @@ input[type="range"] { accent-color: #4ade7f; }
 
   const container = document.getElementById("viewerContainer");
   const errorEl = document.getElementById("error");
-  const transitionOverlay = document.getElementById("transitionOverlay");
-  const zoomInput = document.getElementById("zoom"); // optional (toolbar removed)
-  const zenToast = document.getElementById("zenToast");
   const keybindsOverlay = document.getElementById("keybindsOverlay");
-  const keybindsText = document.getElementById("keybindsText");
   const keybindsClose = document.getElementById("keybindsClose");
   const keybindsCloseBtn = document.getElementById("keybindsCloseBtn");
 
@@ -370,22 +282,11 @@ input[type="range"] { accent-color: #4ade7f; }
   state.baseViewport = null;
   state.largeDoc = false;
   state.isSmallDoc = false;
-  state.isTransitioning = false;
   state.renderedPagesMru = [];  // MRU list for page cache eviction
   state.bookmarks = new Map();
 
   function clamp(v, min, max) {
     return Math.min(max, Math.max(min, v));
-  }
-
-  function startTransition() {
-    state.isTransitioning = true;
-    transitionOverlay.classList.add("active");
-  }
-
-  function endTransition() {
-    state.isTransitioning = false;
-    transitionOverlay.classList.remove("active");
   }
 
   function showError(message) {
@@ -1150,14 +1051,13 @@ input[type="range"] { accent-color: #4ade7f; }
     return [...new Set([...visibleOrder, ...windowOrder, ...renderedOrder])];
   }
 
-  async function rerenderRenderedPages({ showTransition = false } = {}) {
+  async function rerenderRenderedPages() {
     if (!state.pdfDoc) return;
     updateCurrentPageFromScroll();
     const pages = getRefreshPageOrder();
     const anchor = getViewportAnchor();
     beginRenderMutation();
     const token = ++state.renderToken;
-    if (showTransition) startTransition();
     updatePlaceholderSizes();
     try {
       for (const pageNo of pages) {
@@ -1178,13 +1078,11 @@ input[type="range"] { accent-color: #4ade7f; }
       updateDisplayScaleSnapshot();
       endRenderMutation();
       if (!state.isSmallDoc) scheduleRenderWindow();
-      if (showTransition && state.isTransitioning) endTransition();
     }
   }
 
   async function resetAndRender() {
     if (!state.pdfDoc) return;
-    startTransition();
     const anchor = getViewportAnchor();
     if (state.pageObserver) {
       state.pageObserver.disconnect();
@@ -1199,7 +1097,6 @@ input[type="range"] { accent-color: #4ade7f; }
       initPageObserver();
       restoreViewportAnchorStable(anchor);
       updateDisplayScaleSnapshot();
-      if (state.isTransitioning) endTransition();
       return;
     }
     initPageObserver();
@@ -1207,7 +1104,6 @@ input[type="range"] { accent-color: #4ade7f; }
     state.renderPending = false;
     await renderWindow();
     updateDisplayScaleSnapshot();
-    if (state.isTransitioning) endTransition();
   }
 
   function goToPage(n, smooth = true, recordHistory = true) {
@@ -1247,39 +1143,6 @@ input[type="range"] { accent-color: #4ade7f; }
   }
 
   function bindEvents() {
-    // Toast handling (cookie-based so it persists even when localhost port changes)
-    try {
-      if (zenToast) {
-        const getCookie = (name) => {
-          if (!document.cookie) return '';
-          const prefix = `${name}=`;
-          const cookie = document.cookie.split(';').map(c => c.trim()).find((entry) => entry.startsWith(prefix));
-          return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : '';
-        };
-        const disabled = getCookie('zen_pdf_toast_disabled') === '1';
-        if (!disabled) {
-          zenToast.hidden = false;
-          zenToast.style.display = 'flex';
-        } else {
-          zenToast.hidden = true;
-          zenToast.style.display = 'none';
-        }
-        const toastCloseBtn = document.getElementById('toastClose');
-        const toastDont = document.getElementById('toastDontShow');
-        const closeToast = () => {
-          if (toastDont && toastDont.checked) {
-            try { document.cookie = 'zen_pdf_toast_disabled=1; path=/; max-age=31536000;'; } catch(e) { /* ignore */ }
-          }
-          zenToast.hidden = true;
-          zenToast.style.display = 'none';
-        };
-        if (toastCloseBtn) {
-          toastCloseBtn.addEventListener('click', closeToast);
-          toastCloseBtn.addEventListener('pointerup', closeToast);
-        }
-      }
-    } catch (e) { /* ignore */ }
-
     compactKeybindsTable();
 
     // keep current page synced while user scrolls
@@ -1293,25 +1156,13 @@ input[type="range"] { accent-color: #4ade7f; }
       }, 120);
     }, { passive: true });
 
-    // keybinds overlay open/close with animation
     function openKeybinds() {
       if (!keybindsOverlay) return;
-      const inner = keybindsOverlay.querySelector('.overlay-inner');
-      keybindsOverlay.classList.remove('closing');
-      if (inner) inner.classList.remove('closing');
       keybindsOverlay.hidden = false;
     }
     function closeKeybinds() {
-      if (!keybindsOverlay || keybindsOverlay.hidden) return;
-      const inner = keybindsOverlay.querySelector('.overlay-inner');
-      keybindsOverlay.classList.add('closing');
-      if (inner) inner.classList.add('closing');
-      if (!inner) { keybindsOverlay.hidden = true; return; }
-      inner.addEventListener('animationend', () => {
-        inner.classList.remove('closing');
-        keybindsOverlay.classList.remove('closing');
-        keybindsOverlay.hidden = true;
-      }, { once: true });
+      if (!keybindsOverlay) return;
+      keybindsOverlay.hidden = true;
     }
     function toggleKeybinds() {
       if (!keybindsOverlay) return;
@@ -1621,8 +1472,8 @@ input[type="range"] { accent-color: #4ade7f; }
 
       // rotate (r), zen toggle (z), and color toggle (c)
        if (e.key === 'r' && !e.ctrlKey) { state.rotation = (state.rotation + 90) % 360; await resetAndRender(); e.preventDefault(); return; }
-       if (e.key === 'z') { state.zenMode = !state.zenMode; updateModeClass(); await rerenderRenderedPages({ showTransition: true }); e.preventDefault(); return; }
-       if (e.key === 'c') { state.keepImagesColor = !state.keepImagesColor; await rerenderRenderedPages({ showTransition: true }); e.preventDefault(); return; }
+       if (e.key === 'z') { state.zenMode = !state.zenMode; updateModeClass(); await rerenderRenderedPages(); e.preventDefault(); return; }
+       if (e.key === 'c') { state.keepImagesColor = !state.keepImagesColor; await rerenderRenderedPages(); e.preventDefault(); return; }
        if (e.key === 'f') { state.pdfDoc.findController?.executeCommand('find'); e.preventDefault(); return; }
 
       // dual-page mode toggle
