@@ -423,7 +423,7 @@ A network block or content-security policy may prevent the CDN worker from loadi
 Some PDF.js bundles/browser combinations may not expose SVG rendering APIs. The viewer logs a console warning/error and falls back to canvas rendering automatically; use `svg=0` to force canvas explicitly.
 
 **Zen mode looks different than before**
-In SVG backend, Zen uses filter-based styling instead of the older pixel-level heuristic. Text remains sharp, but transparency/image-color behavior can differ from previous canvas-only Zen output.
+Zen recolor uses zathura-style lightness inversion (`recolor-keephue`) when color is enabled, with separate SVG handling for images vs vector text. Near-white paper and anti-aliased fringes are made transparent in pageless mode before recoloring.
 
 **Server starts but browser does not open**
 On Linux the launcher uses `xdg-open`; on macOS it uses `open`. If neither is available you will see an error. Copy the printed URL from the terminal and open it manually in any browser.

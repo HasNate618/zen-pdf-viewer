@@ -246,6 +246,16 @@ input[type="range"] { accent-color: #4ade7f; }
     pageShellMarginX: 28,
   };
 
+  const zen = {
+    pageShade: 18,
+    paperLumaMin: 232,
+    paperChromaMax: 16,
+    haloLumaMin: 205,
+    haloChromaMax: 32,
+    filterMono: "grayscale(1) invert(1)",
+    filterKeepHue: "invert(1) hue-rotate(180deg)",
+  };
+
   const state = {
     scale: 1,
     pdfDoc: null,
@@ -305,9 +315,124 @@ input[type="range"] { accent-color: #4ade7f; }
     errorEl.style.display = "block";
   }
 
+  function pixelLumaChroma(r, g, b) {
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    return {
+      luma: 0.2126 * r + 0.7152 * g + 0.0722 * b,
+      chroma: max - min,
+    };
+  }
+
+  function rgbToHsl255(r, g, b) {
+    const rn = r / 255;
+    const gn = g / 255;
+    const bn = b / 255;
+    const max = Math.max(rn, gn, bn);
+    const min = Math.min(rn, gn, bn);
+    let h = 0;
+    let s = 0;
+    const l = (max + min) / 2;
+    if (max !== min) {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      switch (max) {
+        case rn: h = (gn - bn) / d + (gn < bn ? 6 : 0); break;
+        case gn: h = (bn - rn) / d + 2; break;
+        default: h = (rn - gn) / d + 4;
+      }
+      h /= 6;
+    }
+    return [h, s, l];
+  }
+
+  function hslToRgb255(h, s, l) {
+    if (s === 0) {
+      const v = Math.round(l * 255);
+      return [v, v, v];
+    }
+    const hue2rgb = (p, q, t) => {
+      let tt = t;
+      if (tt < 0) tt += 1;
+      if (tt > 1) tt -= 1;
+      if (tt < 1 / 6) return p + (q - p) * 6 * tt;
+      if (tt < 1 / 2) return q;
+      if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6;
+      return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    return [
+      Math.round(hue2rgb(p, q, h + 1 / 3) * 255),
+      Math.round(hue2rgb(p, q, h) * 255),
+      Math.round(hue2rgb(p, q, h - 1 / 3) * 255),
+    ];
+  }
+
+  function zenRecolorRgb(r, g, b, keepImagesColor) {
+    if (keepImagesColor) {
+      const [h, s, l] = rgbToHsl255(r, g, b);
+      return hslToRgb255(h, s, 1 - l);
+    }
+    const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+    const inv = 255 - gray;
+    return [inv, inv, inv];
+  }
+
+  function isPaperPixel(r, g, b, a) {
+    if (a < 4) return true;
+    const { luma, chroma } = pixelLumaChroma(r, g, b);
+    return luma >= zen.paperLumaMin && chroma <= zen.paperChromaMax;
+  }
+
+  function applyPaperTreatment(data, index) {
+    if (state.pageless) {
+      data[index + 3] = 0;
+      return;
+    }
+    data[index] = zen.pageShade;
+    data[index + 1] = zen.pageShade;
+    data[index + 2] = zen.pageShade;
+    data[index + 3] = 255;
+  }
+
   function applyZenFilter(ctx, w, h, keepImagesColor) {
     const img = ctx.getImageData(0, 0, w, h);
     const d = img.data;
+
+    if (state.pageless && w > 2 && h > 2) {
+      const paperMask = new Uint8Array(w * h);
+      for (let p = 0; p < w * h; p++) {
+        const i = p * 4;
+        if (d[i + 3] === 0) continue;
+        if (isPaperPixel(d[i], d[i + 1], d[i + 2], d[i + 3])) paperMask[p] = 1;
+      }
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          const p = y * w + x;
+          if (paperMask[p]) continue;
+          const i = p * 4;
+          if (d[i + 3] === 0) continue;
+          const { luma, chroma } = pixelLumaChroma(d[i], d[i + 1], d[i + 2]);
+          if (luma < zen.haloLumaMin || chroma > zen.haloChromaMax) continue;
+          let nearPaper = false;
+          for (let dy = -2; dy <= 2 && !nearPaper; dy++) {
+            for (let dx = -2; dx <= 2; dx++) {
+              if (paperMask[(y + dy) * w + (x + dx)] === 1) {
+                nearPaper = true;
+                break;
+              }
+            }
+          }
+          if (nearPaper) paperMask[p] = 1;
+        }
+      }
+      for (let p = 0; p < w * h; p++) {
+        if (!paperMask[p]) continue;
+        applyPaperTreatment(d, p * 4);
+      }
+    }
+
     for (let i = 0; i < d.length; i += 4) {
       const a = d[i + 3];
       if (a === 0) continue;
@@ -315,34 +440,108 @@ input[type="range"] { accent-color: #4ade7f; }
       const r = d[i];
       const g = d[i + 1];
       const b = d[i + 2];
-      const max = Math.max(r, g, b);
-      const min = Math.min(r, g, b);
-      const chroma = max - min;
-      const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
 
-      if (keepImagesColor && chroma > 36 && luma > 12 && luma < 244) {
+      if (!state.pageless && isPaperPixel(r, g, b, a)) {
+        applyPaperTreatment(d, i);
         continue;
       }
 
-      const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-      const inv = 255 - gray;
-      if (inv < 4 && chroma < 6) {
-        if (state.pageless) {
-          d[i + 3] = 0;
-        } else {
-          const pageShade = 18;
-          d[i] = pageShade;
-          d[i + 1] = pageShade;
-          d[i + 2] = pageShade;
-          d[i + 3] = 255;
-        }
-        continue;
+      const [nr, ng, nb] = zenRecolorRgb(r, g, b, keepImagesColor);
+      d[i] = nr;
+      d[i + 1] = ng;
+      d[i + 2] = nb;
+
+      if (state.pageless) {
+        const postLuma = 0.2126 * nr + 0.7152 * ng + 0.0722 * nb;
+        if (postLuma < 14) d[i + 3] = 0;
       }
-      d[i] = inv;
-      d[i + 1] = inv;
-      d[i + 2] = inv;
     }
+
     ctx.putImageData(img, 0, 0);
+  }
+
+  function parseSvgColorComponent(value) {
+    const v = parseFloat(value);
+    if (!Number.isFinite(v)) return null;
+    if (String(value).includes("%")) return Math.round(v * 2.55);
+    return v <= 1 ? Math.round(v * 255) : Math.round(v);
+  }
+
+  function parseSvgPaint(value) {
+    if (!value || value === "none") return null;
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "white") return [255, 255, 255];
+    const hex = normalized.match(/^#([\da-f]{3}|[\da-f]{6})$/i);
+    if (hex) {
+      let h = hex[1];
+      if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+      const n = parseInt(h, 16);
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+    const rgb = normalized.match(/^rgba?\(\s*([^)]+)\)$/);
+    if (rgb) {
+      const parts = rgb[1].split(/[\s,/]+/).filter(Boolean);
+      if (parts.length < 3) return null;
+      const r = parseSvgColorComponent(parts[0]);
+      const g = parseSvgColorComponent(parts[1]);
+      const b = parseSvgColorComponent(parts[2]);
+      if (r === null || g === null || b === null) return null;
+      return [r, g, b];
+    }
+    return null;
+  }
+
+  function isNearWhitePaint(value) {
+    const rgb = parseSvgPaint(value);
+    if (!rgb) return false;
+    const [r, g, b] = rgb;
+    const { luma, chroma } = pixelLumaChroma(r, g, b);
+    return luma >= zen.paperLumaMin && chroma <= zen.paperChromaMax;
+  }
+
+  function clearNearWhiteSvgPaints(svg) {
+    const paintAttrs = ["fill", "stroke"];
+    svg.querySelectorAll("*").forEach((el) => {
+      for (const attr of paintAttrs) {
+        const val = el.getAttribute(attr) || el.style?.[attr];
+        if (!isNearWhitePaint(val)) continue;
+        el.setAttribute(attr, "none");
+        if (attr === "fill") el.setAttribute("fill-opacity", "0");
+        if (el.style) el.style[attr] = "none";
+      }
+    });
+  }
+
+  function applySvgElementFilter(el, filter) {
+    if (!el || el.tagName === "defs") return;
+    el.style.filter = filter;
+  }
+
+  function applySvgZenStyle(svg, keepImagesColor) {
+    svg.style.filter = "";
+    clearNearWhiteSvgPaints(svg);
+
+    const monoFilter = zen.filterMono;
+    const colorFilter = zen.filterKeepHue;
+    const vectorFilter = monoFilter;
+    const imageFilter = keepImagesColor ? colorFilter : monoFilter;
+
+    svg.querySelectorAll("image").forEach((img) => {
+      applySvgElementFilter(img, imageFilter);
+    });
+
+    const vectorTags = "path, rect, polygon, circle, ellipse, line, polyline, text, tspan, use";
+    svg.querySelectorAll(vectorTags).forEach((el) => {
+      if (el.closest("image")) return;
+      applySvgElementFilter(el, vectorFilter);
+    });
+
+    svg.querySelectorAll("g").forEach((group) => {
+      if (group.closest("defs")) return;
+      if (group.querySelector("image")) return;
+      if (group.querySelector(vectorTags)) return;
+      applySvgElementFilter(group, vectorFilter);
+    });
   }
 
   function updateModeClass() {
@@ -760,7 +959,7 @@ input[type="range"] { accent-color: #4ade7f; }
     svg.style.width = "100%";
     svg.style.height = "100%";
     if (state.zenMode) {
-      svg.style.filter = state.keepImagesColor ? "invert(1) hue-rotate(180deg)" : "grayscale(1) invert(1)";
+      applySvgZenStyle(svg, state.keepImagesColor);
     }
     shell.appendChild(svg);
   }
