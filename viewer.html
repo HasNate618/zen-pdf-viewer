@@ -240,6 +240,12 @@ input[type="range"] { accent-color: #4ade7f; }
     maxRenderedPages: 50,
   };
 
+  const layout = {
+    preferredPortraitDpi: 120,
+    pdfPointDpi: 72,
+    pageShellMarginX: 28,
+  };
+
   const state = {
     scale: 1,
     pdfDoc: null,
@@ -622,42 +628,74 @@ input[type="range"] { accent-color: #4ade7f; }
     return order;
   }
 
-  async function getModeFitScale() {
-    if (!state.pdfDoc) return false;
-    const firstPage = await getPdfPage(1);
-    const vp = firstPage.getViewport({ scale: 1, rotation: (state.rotation || 0) });
-    const pad = 16;
-    const availableW = Math.max(100, window.innerWidth - pad);
-    const availableH = Math.max(100, window.innerHeight - pad);
+  function getAvailablePageWidth() {
+    if (!container) return Math.max(100, window.innerWidth - 16);
+    const cs = getComputedStyle(container);
+    const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+    const shellMarginX = state.pageless ? 0 : layout.pageShellMarginX;
+    return Math.max(100, window.innerWidth - padX - shellMarginX);
+  }
+
+  function getWidthFitScale(viewport, availableW) {
+    return availableW / Math.max(viewport.width, 1);
+  }
+
+  function getPortraitPreferredScale() {
+    return layout.preferredPortraitDpi / layout.pdfPointDpi;
+  }
+
+  async function getModeFitScale({ pageNumber } = {}) {
+    if (!state.pdfDoc) return 1;
+    const pageNo = clamp(
+      Number.isFinite(pageNumber) ? pageNumber : (state.currentPage || 1),
+      1,
+      state.pdfDoc.numPages,
+    );
+    const page = await getPdfPage(pageNo);
+    const vp = page.getViewport({ scale: 1, rotation: state.rotation || 0 });
+    const availableW = getAvailablePageWidth();
     let nextScale;
 
     if (state.dualMode) {
       const gap = 8;
       const totalWidth = (vp.width * 2) + gap;
-      nextScale = availableW / Math.max(totalWidth, 1);
+      nextScale = getWidthFitScale({ width: totalWidth }, availableW);
     } else {
-      const scaleX = availableW / vp.width;
-      const scaleY = availableH / vp.height;
-      nextScale = Math.max(scaleX, scaleY);
+      const widthFitScale = getWidthFitScale(vp, availableW);
+      const isLandscape = vp.width >= vp.height;
+      nextScale = isLandscape
+        ? widthFitScale
+        : Math.min(getPortraitPreferredScale(), widthFitScale);
     }
 
     return Math.max(nextScale, 0.1);
   }
 
-  async function adjustScaleToMode({ skipWhenZoomedIn = false } = {}) {
+  async function adjustScaleToMode({ skipWhenZoomedIn = false, pageNumber } = {}) {
     if (!state.pdfDoc) return false;
     try {
-      const fitScale = await getModeFitScale();
+      const fitScale = await getModeFitScale({ pageNumber });
       if (skipWhenZoomedIn && state.scale > fitScale + 0.01) {
         return false;
       }
       const prevScale = state.scale;
       state.scale = fitScale;
-      if (zoomInput) zoomInput.value = clamp(Math.round(state.scale * 100), 50, 250);
       return Math.abs(prevScale - state.scale) > 0.01;
     } catch (e) {
       return false;
     }
+  }
+
+  function alignFitWidthView() {
+    requestAnimationFrame(() => {
+      window.scrollTo({ left: 0, top: window.scrollY, behavior: 'auto' });
+    });
+  }
+
+  async function resetToFitWidth({ pageNumber } = {}) {
+    await adjustScaleToMode({ pageNumber });
+    await rerenderRenderedPages();
+    alignFitWidthView();
   }
 
   function getEstimatedPageSize() {
@@ -1476,7 +1514,7 @@ input[type="range"] { accent-color: #4ade7f; }
       if (e.ctrlKey && keyLower === 'i') { const p = state.jumpForward.pop(); if (p) { state.jumpBack.push(state.currentPage); goToPage(p, true, false); } e.preventDefault(); return; }
 
       // rotate (r), zen toggle (z), and color toggle (c)
-       if (e.key === 'r' && !e.ctrlKey) { state.rotation = (state.rotation + 90) % 360; await resetAndRender(); e.preventDefault(); return; }
+       if (e.key === 'r' && !e.ctrlKey) { state.rotation = (state.rotation + 90) % 360; await adjustScaleToMode(); await resetAndRender(); alignFitWidthView(); e.preventDefault(); return; }
        if (e.key === 'z') { state.zenMode = !state.zenMode; updateModeClass(); await rerenderRenderedPages(); e.preventDefault(); return; }
        if (e.key === 'c') { state.keepImagesColor = !state.keepImagesColor; await rerenderRenderedPages(); e.preventDefault(); return; }
        if (e.key === 'f') { state.pdfDoc.findController?.executeCommand('find'); e.preventDefault(); return; }
@@ -1489,6 +1527,7 @@ input[type="range"] { accent-color: #4ade7f; }
         await adjustScaleToMode();
          await resetAndRender();
          restoreViewportAnchor(anchor);
+         alignFitWidthView();
          e.preventDefault();
          return;
        }
@@ -1499,8 +1538,10 @@ input[type="range"] { accent-color: #4ade7f; }
         state.pageless = !state.pageless;
         state.compress = !state.compress;
         updateModeClass();
+        await adjustScaleToMode();
          await resetAndRender();
          restoreViewportAnchor(anchor);
+         alignFitWidthView();
          e.preventDefault();
          return;
        }
@@ -1515,8 +1556,7 @@ input[type="range"] { accent-color: #4ade7f; }
        if (e.key === '=') { state.scale = Math.min(state.scale * 1.1, 4); await rerenderRenderedPages(); e.preventDefault(); return; }
        if (e.key === '-') { state.scale = Math.max(state.scale / 1.1, 0.1); await rerenderRenderedPages(); e.preventDefault(); return; }
       if (e.key === '0') {
-         const scaleChanged = await adjustScaleToMode();
-         if (scaleChanged) await rerenderRenderedPages();
+         await resetToFitWidth({ pageNumber: state.currentPage });
          e.preventDefault();
          return;
        }
@@ -1594,9 +1634,10 @@ input[type="range"] { accent-color: #4ade7f; }
         const widthChanged = window.innerWidth !== lastWindowWidth;
         lastWindowWidth = window.innerWidth;
         if (!widthChanged) return;
-        const scaleChanged = await adjustScaleToMode({ skipWhenZoomedIn: true });
+        const scaleChanged = await adjustScaleToMode({ pageNumber: state.currentPage, skipWhenZoomedIn: true });
         if (scaleChanged || hasDisplayScaleChange()) {
           await rerenderRenderedPages();
+          alignFitWidthView();
         } else {
           updateDisplayScaleSnapshot();
         }
@@ -1612,7 +1653,7 @@ input[type="range"] { accent-color: #4ade7f; }
       // Initial adjust and set resize handler to auto-fill on window changes.
       const firstPage = await getPdfPage(1);
       state.baseViewport = firstPage.getViewport({ scale: 1, rotation: 0 });
-      await adjustScaleToMode();
+      await adjustScaleToMode({ pageNumber: 1 });
       state.baseDevicePixelRatio = Math.max(window.devicePixelRatio || 1, 1);
       updateDisplayScaleSnapshot();
       window.addEventListener('resize', onWindowResize);
@@ -1622,6 +1663,7 @@ input[type="range"] { accent-color: #4ade7f; }
       }
 
       await resetAndRender();
+      alignFitWidthView();
     } catch (err) {
       showError(`Could not render PDF: ${err?.message || err}`);
       console.error(err);
