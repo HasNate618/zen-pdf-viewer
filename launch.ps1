@@ -80,7 +80,7 @@ if (-not $ready) {
 $encFile = [Uri]::EscapeDataString("doc.pdf")
 $encFg   = [Uri]::EscapeDataString("#e6e6e6")
 $encBg   = [Uri]::EscapeDataString("rgba(0,0,0,0.45)")
-$url     = "http://127.0.0.1:$port/viewer.html?file=$encFile&zen=1&imgcolor=0&fg=$encFg&bg=$encBg"
+$url     = "http://127.0.0.1:$port/viewer.html?file=$encFile&zen=1&fg=$encFg&bg=$encBg"
 
 Start-Process $url
 Write-Host "Zen PDF viewer: $url  (server pid $($serverProc.Id), tmpdir $tmpDir)"

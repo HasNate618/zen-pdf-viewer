@@ -357,7 +357,7 @@ http://127.0.0.1:PORT/viewer.html?file=doc.pdf&zen=1&imgcolor=0
 |---|---|---|
 | `file` | *(required)* | Filename served from the same local server |
 | `zen` | `1` | Zen mode: `1` = enabled, `0` = disabled |
-| `imgcolor` | `0` | Preserve image colors in Zen mode: `1` = keep, `0` = recolor |
+| `imgcolor` | `1` | Preserve image colors in Zen mode: `1` = keep (default), `0` = recolor |
 | `dual` | `0` | Dual-page view: `1` = enabled |
 | `pageless` | same as `zen` | Pageless/transparent mode: `1` = enabled |
 | `svg` | `1` | Rendering backend preference: `1` = SVG-first (vector), `0` = force canvas |

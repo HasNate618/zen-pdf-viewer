@@ -123,7 +123,7 @@ fi
 enc_file=$(urlencode "doc.pdf")
 enc_fg=$(urlencode "#e6e6e6")
 enc_bg=$(urlencode "rgba(0,0,0,0.45)")
-URL="http://127.0.0.1:$PORT/viewer.html?file=$enc_file&zen=1&imgcolor=0&fg=$enc_fg&bg=$enc_bg"
+URL="http://127.0.0.1:$PORT/viewer.html?file=$enc_file&zen=1&fg=$enc_fg&bg=$enc_bg"
 
 $OPEN_CMD "$URL" >/dev/null 2>&1 &
 printf 'Zen PDF viewer: %s  (server pid %s, tmpdir %s)\n' "$URL" "$SERVER_PID" "$TMPDIR" >&2

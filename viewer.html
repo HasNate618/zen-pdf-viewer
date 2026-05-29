@@ -252,15 +252,20 @@ input[type="range"] { accent-color: #4ade7f; }
     paperChromaMax: 16,
     haloLumaMin: 205,
     haloChromaMax: 32,
+    bgEdgeCoverageMin: 0.5,
+    bgRgbTol: 38,
+    bgLumaTol: 32,
+    bgFringeLuma: 44,
     filterMono: "grayscale(1) invert(1)",
     filterKeepHue: "invert(1) hue-rotate(180deg)",
+    filterGrayscale: "grayscale(1)",
   };
 
   const state = {
     scale: 1,
     pdfDoc: null,
     zenMode: params.get("zen") !== "0",
-    keepImagesColor: params.get("imgcolor") === "1",
+    keepImagesColor: params.get("imgcolor") !== "0",
     svgEnabled: params.get("svg") !== "0",
     svgSupported: typeof pdfjsLib !== "undefined" && typeof pdfjsLib.SVGGraphics === "function",
     svgFallbackLogged: false,
@@ -369,7 +374,12 @@ input[type="range"] { accent-color: #4ade7f; }
     ];
   }
 
-  function zenRecolorRgb(r, g, b, keepImagesColor) {
+  function zenRecolorRgb(r, g, b, keepImagesColor, pageBg) {
+    if (pageBg?.isDark) {
+      if (keepImagesColor) return [r, g, b];
+      const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+      return [gray, gray, gray];
+    }
     if (keepImagesColor) {
       const [h, s, l] = rgbToHsl255(r, g, b);
       return hslToRgb255(h, s, 1 - l);
@@ -379,9 +389,70 @@ input[type="range"] { accent-color: #4ade7f; }
     return [inv, inv, inv];
   }
 
-  function isPaperPixel(r, g, b, a) {
+  function rgbDistance(r1, g1, b1, r2, g2, b2) {
+    const dr = r1 - r2;
+    const dg = g1 - g2;
+    const db = b1 - b2;
+    return Math.sqrt(dr * dr + dg * dg + db * db);
+  }
+
+  function medianOf(values) {
+    if (!values.length) return 0;
+    const sorted = values.slice().sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+
+  function detectCanvasBackground(d, w, h) {
+    if (w < 3 || h < 3) return null;
+    const border = Math.max(1, Math.floor(Math.min(w, h) * 0.02));
+    const samples = [];
+    const sampleAt = (x, y) => {
+      const i = (y * w + x) * 4;
+      if (d[i + 3] < 4) return;
+      const r = d[i];
+      const g = d[i + 1];
+      const b = d[i + 2];
+      const { luma, chroma } = pixelLumaChroma(r, g, b);
+      if (chroma > zen.paperChromaMax + 10) return;
+      samples.push({ r, g, b, luma, chroma });
+    };
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (x < border || x >= w - border || y < border || y >= h - border) {
+          sampleAt(x, y);
+        }
+      }
+    }
+    if (samples.length < 12) return null;
+
+    const r = Math.round(medianOf(samples.map((s) => s.r)));
+    const g = Math.round(medianOf(samples.map((s) => s.g)));
+    const b = Math.round(medianOf(samples.map((s) => s.b)));
+    const { luma, chroma } = pixelLumaChroma(r, g, b);
+    const isDark = luma < 128;
+    let matching = 0;
+    for (const sample of samples) {
+      if (sample.chroma > zen.paperChromaMax + 6) continue;
+      if (rgbDistance(sample.r, sample.g, sample.b, r, g, b) <= zen.bgRgbTol) matching++;
+    }
+    if (matching / samples.length < zen.bgEdgeCoverageMin) return null;
+
+    return { r, g, b, luma, chroma, isDark };
+  }
+
+  function isBackgroundPixel(r, g, b, a, pageBg) {
     if (a < 4) return true;
     const { luma, chroma } = pixelLumaChroma(r, g, b);
+
+    if (pageBg) {
+      if (chroma > zen.paperChromaMax + (pageBg.isDark ? 12 : 4)) return false;
+      if (rgbDistance(r, g, b, pageBg.r, pageBg.g, pageBg.b) > zen.bgRgbTol) return false;
+      if (pageBg.isDark) return luma <= pageBg.luma + zen.bgLumaTol;
+      return luma >= pageBg.luma - zen.bgLumaTol;
+    }
+
     return luma >= zen.paperLumaMin && chroma <= zen.paperChromaMax;
   }
 
@@ -396,39 +467,56 @@ input[type="range"] { accent-color: #4ade7f; }
     data[index + 3] = 255;
   }
 
+  function buildBackgroundMask(d, w, h, pageBg) {
+    const mask = new Uint8Array(w * h);
+    for (let p = 0; p < w * h; p++) {
+      const i = p * 4;
+      if (d[i + 3] === 0) continue;
+      if (isBackgroundPixel(d[i], d[i + 1], d[i + 2], d[i + 3], pageBg)) mask[p] = 1;
+    }
+
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const p = y * w + x;
+        if (mask[p]) continue;
+        const i = p * 4;
+        if (d[i + 3] === 0) continue;
+        const { luma, chroma } = pixelLumaChroma(d[i], d[i + 1], d[i + 2]);
+        if (chroma > zen.haloChromaMax) continue;
+
+        let nearBg = false;
+        for (let dy = -2; dy <= 2 && !nearBg; dy++) {
+          for (let dx = -2; dx <= 2; dx++) {
+            if (mask[(y + dy) * w + (x + dx)] === 1) {
+              nearBg = true;
+              break;
+            }
+          }
+        }
+        if (!nearBg) continue;
+
+        if (pageBg?.isDark) {
+          if (luma <= pageBg.luma + zen.bgFringeLuma && chroma <= zen.paperChromaMax + 8) {
+            mask[p] = 1;
+          }
+        } else if (luma >= zen.haloLumaMin && chroma <= zen.haloChromaMax) {
+          mask[p] = 1;
+        }
+      }
+    }
+
+    return mask;
+  }
+
   function applyZenFilter(ctx, w, h, keepImagesColor) {
     const img = ctx.getImageData(0, 0, w, h);
     const d = img.data;
+    const pageBg = detectCanvasBackground(d, w, h);
 
     if (state.pageless && w > 2 && h > 2) {
-      const paperMask = new Uint8Array(w * h);
+      const bgMask = buildBackgroundMask(d, w, h, pageBg);
       for (let p = 0; p < w * h; p++) {
-        const i = p * 4;
-        if (d[i + 3] === 0) continue;
-        if (isPaperPixel(d[i], d[i + 1], d[i + 2], d[i + 3])) paperMask[p] = 1;
-      }
-      for (let y = 1; y < h - 1; y++) {
-        for (let x = 1; x < w - 1; x++) {
-          const p = y * w + x;
-          if (paperMask[p]) continue;
-          const i = p * 4;
-          if (d[i + 3] === 0) continue;
-          const { luma, chroma } = pixelLumaChroma(d[i], d[i + 1], d[i + 2]);
-          if (luma < zen.haloLumaMin || chroma > zen.haloChromaMax) continue;
-          let nearPaper = false;
-          for (let dy = -2; dy <= 2 && !nearPaper; dy++) {
-            for (let dx = -2; dx <= 2; dx++) {
-              if (paperMask[(y + dy) * w + (x + dx)] === 1) {
-                nearPaper = true;
-                break;
-              }
-            }
-          }
-          if (nearPaper) paperMask[p] = 1;
-        }
-      }
-      for (let p = 0; p < w * h; p++) {
-        if (!paperMask[p]) continue;
+        if (!bgMask[p]) continue;
         applyPaperTreatment(d, p * 4);
       }
     }
@@ -441,19 +529,19 @@ input[type="range"] { accent-color: #4ade7f; }
       const g = d[i + 1];
       const b = d[i + 2];
 
-      if (!state.pageless && isPaperPixel(r, g, b, a)) {
+      if (!state.pageless && isBackgroundPixel(r, g, b, a, pageBg)) {
         applyPaperTreatment(d, i);
         continue;
       }
 
-      const [nr, ng, nb] = zenRecolorRgb(r, g, b, keepImagesColor);
+      const [nr, ng, nb] = zenRecolorRgb(r, g, b, keepImagesColor, pageBg);
       d[i] = nr;
       d[i + 1] = ng;
       d[i + 2] = nb;
 
-      if (state.pageless) {
-        const postLuma = 0.2126 * nr + 0.7152 * ng + 0.0722 * nb;
-        if (postLuma < 14) d[i + 3] = 0;
+      if (state.pageless && !pageBg?.isDark) {
+        const post = pixelLumaChroma(nr, ng, nb);
+        if (post.luma < 14) d[i + 3] = 0;
       }
     }
 
@@ -491,20 +579,44 @@ input[type="range"] { accent-color: #4ade7f; }
     return null;
   }
 
-  function isNearWhitePaint(value) {
+  function paintMatchesBackground(value, pageBg) {
     const rgb = parseSvgPaint(value);
     if (!rgb) return false;
     const [r, g, b] = rgb;
-    const { luma, chroma } = pixelLumaChroma(r, g, b);
-    return luma >= zen.paperLumaMin && chroma <= zen.paperChromaMax;
+    return isBackgroundPixel(r, g, b, 255, pageBg);
   }
 
-  function clearNearWhiteSvgPaints(svg) {
+  function detectSvgBackground(svg, viewport) {
+    const vw = parseFloat(svg.getAttribute("width")) || viewport?.width || 0;
+    const vh = parseFloat(svg.getAttribute("height")) || viewport?.height || 0;
+    let best = null;
+    let bestArea = 0;
+
+    svg.querySelectorAll("rect").forEach((el) => {
+      if (el.closest("defs")) return;
+      const w = parseFloat(el.getAttribute("width") || 0);
+      const h = parseFloat(el.getAttribute("height") || 0);
+      const area = w * h;
+      if (area <= bestArea || !vw || !vh) return;
+      if (w < vw * 0.7 || h < vh * 0.7) return;
+      const fill = el.getAttribute("fill") || el.style?.fill;
+      const rgb = parseSvgPaint(fill);
+      if (!rgb) return;
+      const { luma, chroma } = pixelLumaChroma(rgb[0], rgb[1], rgb[2]);
+      if (chroma > zen.paperChromaMax + 8) return;
+      bestArea = area;
+      best = { r: rgb[0], g: rgb[1], b: rgb[2], luma, chroma, isDark: luma < 128 };
+    });
+
+    return best;
+  }
+
+  function clearBackgroundSvgPaints(svg, pageBg) {
     const paintAttrs = ["fill", "stroke"];
     svg.querySelectorAll("*").forEach((el) => {
       for (const attr of paintAttrs) {
         const val = el.getAttribute(attr) || el.style?.[attr];
-        if (!isNearWhitePaint(val)) continue;
+        if (!paintMatchesBackground(val, pageBg)) continue;
         el.setAttribute(attr, "none");
         if (attr === "fill") el.setAttribute("fill-opacity", "0");
         if (el.style) el.style[attr] = "none";
@@ -512,21 +624,58 @@ input[type="range"] { accent-color: #4ade7f; }
     });
   }
 
+  async function applyZenToSvgImages(svg, keepImagesColor) {
+    const images = [...svg.querySelectorAll("image")];
+    await Promise.all(images.map(async (img) => {
+      const href = img.getAttribute("href") || img.getAttribute("xlink:href");
+      if (!href || href.startsWith("#")) return;
+
+      const w = Math.max(1, Math.floor(parseFloat(img.getAttribute("width")) || 0));
+      const h = Math.max(1, Math.floor(parseFloat(img.getAttribute("height")) || 0));
+      if (!w || !h) return;
+
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d", { alpha: true, willReadFrequently: true });
+      const imageEl = new Image();
+      await new Promise((resolve, reject) => {
+        imageEl.onload = resolve;
+        imageEl.onerror = reject;
+        imageEl.src = href;
+      });
+      ctx.drawImage(imageEl, 0, 0, w, h);
+      applyZenFilter(ctx, w, h, keepImagesColor);
+      img.setAttribute("href", canvas.toDataURL("image/png"));
+      img.removeAttribute("xlink:href");
+      img.style.filter = "";
+    }));
+  }
+
   function applySvgElementFilter(el, filter) {
     if (!el || el.tagName === "defs") return;
     el.style.filter = filter;
   }
 
-  function applySvgZenStyle(svg, keepImagesColor) {
+  async function applySvgZenStyle(svg, keepImagesColor, viewport) {
     svg.style.filter = "";
-    clearNearWhiteSvgPaints(svg);
+    const pageBg = detectSvgBackground(svg, viewport);
+    clearBackgroundSvgPaints(svg, pageBg);
+    await applyZenToSvgImages(svg, keepImagesColor);
 
     const monoFilter = zen.filterMono;
     const colorFilter = zen.filterKeepHue;
-    const vectorFilter = monoFilter;
+    const vectorFilter = pageBg?.isDark
+      ? (keepImagesColor ? "" : zen.filterGrayscale)
+      : monoFilter;
     const imageFilter = keepImagesColor ? colorFilter : monoFilter;
 
     svg.querySelectorAll("image").forEach((img) => {
+      if (img.getAttribute("href")?.startsWith("data:")) return;
+      if (pageBg?.isDark) {
+        applySvgElementFilter(img, keepImagesColor ? "" : zen.filterGrayscale);
+        return;
+      }
       applySvgElementFilter(img, imageFilter);
     });
 
@@ -959,7 +1108,7 @@ input[type="range"] { accent-color: #4ade7f; }
     svg.style.width = "100%";
     svg.style.height = "100%";
     if (state.zenMode) {
-      applySvgZenStyle(svg, state.keepImagesColor);
+      await applySvgZenStyle(svg, state.keepImagesColor, viewport);
     }
     shell.appendChild(svg);
   }
