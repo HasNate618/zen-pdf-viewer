@@ -54,6 +54,7 @@ Use Alt+1-9 to save a bookmark slot and 1-9 to jump back to that position; verif
 Trigger the toast dismissal flow and make sure cookies suppress repeate invites; check the console for suppressed exceptions.
 Open the keybind overlay (Esc) and ensure compactKeybindsTable still renders clean table markup.
 Use pointer drags across the text layer to confirm selection logic naturally prevents jumps when leaving text.
+Verify cross-page selection (page-1 text -> page-2 text in pageless mode) still bridges via the `selBridge` handler; same-page drags must remain fully native (no pointer override) so empty-area drags stay predictable.
 Checking these paths manually is the most reliable regression guard because there are no automated suites.
 
 ## JavaScript style guidelines

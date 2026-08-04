@@ -410,6 +410,9 @@ Toggle Zen mode off (`z`) to check if the page renders normally. In Zen mode, ne
 **Text is not selectable**
 Some PDFs are scanned images with no embedded text. Run OCR on the PDF first (e.g. `ocrmypdf input.pdf output.pdf`) to get a text layer.
 
+**Cross-page selection stops at the page boundary**
+Chrome-based browsers (and some Firefox versions) refuse to extend a native drag selection across `user-select: none` regions. The viewer bridges this with a pointer-driven `setBaseAndExtent` handler (`selBridge` in `bindEvents`): same-page drags stay fully native so empty-page-area drags behave predictably, and when the caret crosses into another page the selection is extended from the original anchor. If cross-page selection regresses, verify with a drag from page-1 text into page-2 text in pageless mode; the bridge relies on `document.caretPositionFromPoint` (Firefox) or `document.caretRangeFromPoint` (Chrome/Safari) both being present.
+
 **"viewer.html not found" error**
 The launcher cannot find `viewer.html` in the expected data directory. Re-run the copy step from the [Installation](#installation) section for your platform.
 
