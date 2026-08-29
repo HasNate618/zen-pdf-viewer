@@ -14,6 +14,11 @@ $ErrorActionPreference = "Stop"
 
 # --- locate viewer -----------------------------------------------------------
 
+# Reap stale temp dirs older than 7 days (best-effort).
+Get-ChildItem $env:TEMP -Directory -Filter 'zen-pdf-*' -ErrorAction SilentlyContinue |
+    Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } |
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
 $viewerDir  = Join-Path $env:APPDATA "zen-pdf-viewer"
 $viewerHtml = Join-Path $viewerDir "viewer.html"
 $serverPy   = Join-Path $viewerDir "zen-server.py"
@@ -43,6 +48,10 @@ $tmpDir  = Join-Path $env:TEMP ("zen-pdf-" + [System.IO.Path]::GetRandomFileName
 New-Item -ItemType Directory -Path $tmpDir | Out-Null
 Copy-Item $viewerHtml $tmpDir
 Copy-Item $serverPy $tmpDir
+$vendorDir = Join-Path $viewerDir "vendor"
+if (Test-Path $vendorDir) {
+    Copy-Item $vendorDir (Join-Path $tmpDir "vendor") -Recurse
+}
 
 # --- resolve PDF -------------------------------------------------------------
 

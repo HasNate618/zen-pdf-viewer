@@ -47,7 +47,7 @@ A lightweight, keyboard-first PDF viewer built on PDF.js. It runs entirely in yo
 | **Python 3** | Ships with macOS 12+; install from python.org on Windows; `python3` on Linux |
 | **Modern browser** | Chrome, Firefox, Safari, Zen Browser, Edge — anything that supports PDF.js |
 | **curl** (Linux/macOS) | Used by the launcher to download remote PDFs; wget works too |
-| **Internet** (optional) | PDF.js is loaded from a CDN by default; see [Offline / Vendored PDF.js](#offline--vendored-pdfjs) to avoid this |
+| **Internet** (optional) | PDF.js is bundled in `vendor/`; no network needed to open local PDFs |
 
 ---
 
@@ -104,11 +104,12 @@ python3 -m http.server 8000 --bind 127.0.0.1
    git clone https://github.com/HasNate618/zen-pdf-viewer.git ~/Projects/zen-pdf-viewer
    ```
 
-2. **Copy `viewer.html` and `zen-server.py` to the viewer data directory:**
+2. **Copy `viewer.html`, `zen-server.py`, and `vendor/` to the viewer data directory:**
 
    ```bash
    mkdir -p ~/.local/share/zen-pdf-viewer
    cp ~/Projects/zen-pdf-viewer/viewer.html ~/Projects/zen-pdf-viewer/zen-server.py ~/.local/share/zen-pdf-viewer/
+   cp -r ~/Projects/zen-pdf-viewer/vendor ~/.local/share/zen-pdf-viewer/
    ```
 
    > **Migrating from an older install?** If you previously used `~/.local/share/pdfjs`, either copy `viewer.html` there too or update your existing launcher script to point at `~/.local/share/zen-pdf-viewer`.
@@ -138,11 +139,12 @@ python3 -m http.server 8000 --bind 127.0.0.1
    git clone https://github.com/HasNate618/zen-pdf-viewer.git ~/Projects/zen-pdf-viewer
    ```
 
-2. **Copy `viewer.html` and `zen-server.py` to the viewer data directory:**
+2. **Copy `viewer.html`, `zen-server.py`, and `vendor/` to the viewer data directory:**
 
    ```bash
    mkdir -p "$HOME/Library/Application Support/zen-pdf-viewer"
    cp ~/Projects/zen-pdf-viewer/viewer.html ~/Projects/zen-pdf-viewer/zen-server.py "$HOME/Library/Application Support/zen-pdf-viewer/"
+   cp -r ~/Projects/zen-pdf-viewer/vendor "$HOME/Library/Application Support/zen-pdf-viewer/"
    ```
 
 3. **Install the launcher:**
@@ -178,12 +180,13 @@ python3 -m http.server 8000 --bind 127.0.0.1
    git clone https://github.com/HasNate618/zen-pdf-viewer.git C:\Tools\zen-pdf-viewer
    ```
 
-2. **Copy `viewer.html` and `zen-server.py` to the viewer data directory:**
+2. **Copy `viewer.html`, `zen-server.py`, and `vendor/` to the viewer data directory:**
 
    ```powershell
    $dest = "$env:APPDATA\zen-pdf-viewer"
    New-Item -ItemType Directory -Force $dest
    Copy-Item C:\Tools\zen-pdf-viewer\viewer.html, C:\Tools\zen-pdf-viewer\zen-server.py $dest
+   Copy-Item C:\Tools\zen-pdf-viewer\vendor $dest -Recurse
    ```
 
 3. **Verify Python 3 is available:**
@@ -374,30 +377,22 @@ http://127.0.0.1:PORT/viewer.html?file=doc.pdf&zen=1&imgcolor=0
 - The `state` object controls initial viewer mode. Query parameters always override the defaults.
 - CSS lives in the embedded `<style>` block — the viewer is intentionally a single self-contained file.
 
-### Offline / Vendored PDF.js
+### PDF.js version
 
-The viewer pins **PDF.js 2.16.105** and loads it from unpkg with a Subresource Integrity hash. Stay on the 2.x line: `SVGGraphics` (used for vector-first rendering) was removed in PDF.js v4, so bumping to current 4.x releases would break the default SVG path.
+The viewer pins **PDF.js 2.16.105** in `vendor/` (`pdf.min.js` and `pdf.worker.min.js`). Stay on the 2.x line: `SVGGraphics` (used for vector-first rendering) was removed in PDF.js v4, so bumping to current 4.x releases would break the default SVG path.
 
-By default the viewer loads PDF.js from a CDN. To run fully offline:
+To refresh the vendored files after changing the pinned version:
 
-1. Download `pdf.min.js` and `pdf.worker.min.js` from the [PDF.js releases page](https://github.com/mozilla/pdf.js/releases) (match **2.16.105** in `viewer.html`).
-2. Place them in a `vendor/` folder inside the repo.
-3. In `viewer.html`, update:
-   ```html
-   <script src="./vendor/pdf.min.js"></script>
-   ```
-   and inside the script:
-   ```js
-   pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.js';
-   ```
-4. Remove the CDN `integrity`/`crossorigin` attributes when serving locally.
+1. Download matching `pdf.min.js` and `pdf.worker.min.js` from the [PDF.js releases page](https://github.com/mozilla/pdf.js/releases).
+2. Replace the files in `vendor/`.
+3. Re-copy `vendor/` to your viewer data directory (see [Installation](#installation)).
 
 ---
 
 ## How It Works
 
 1. The **launcher** (`launch.sh` / `launch.ps1`) copies the requested PDF into a temporary directory alongside `viewer.html`, then starts `zen-server.py` bound to `127.0.0.1` on an ephemeral port (port 0 bind, no race). The server exits automatically after 30 minutes without requests.
-2. **PDF.js** (loaded from CDN or vendored locally) parses each page and renders it as **SVG by default** for vector-sharp browser/pinch zoom.
+2. **PDF.js** (bundled in `vendor/`) parses each page and renders it as **SVG by default** for vector-sharp browser/pinch zoom.
 3. A **text layer** is rendered on top using `renderTextLayer`, making text selectable and copyable.
 4. In **Zen mode with SVG backend**, a filter-based SVG path is used for dark rendering. This keeps SVG sharpness but may look different from the older pixel-heuristic Zen filter.
 5. A high-DPI `<canvas>` path is still used when `svg=0` is set or when SVG rendering is unavailable.
@@ -424,7 +419,7 @@ The launcher cannot find `viewer.html` in the expected data directory. Re-run th
 The launcher requires `curl` or `wget` on Linux/macOS. On Windows, `Invoke-WebRequest` is used. Make sure one of these is available and the URL is reachable.
 
 **PDF.js worker fails to load**
-A network block or content-security policy may prevent the CDN worker from loading. See [Offline / Vendored PDF.js](#offline--vendored-pdfjs) to serve the worker locally.
+Ensure `vendor/pdf.worker.min.js` was copied into the temp session (re-run the install step including `vendor/`). When testing from the repo with `python3 -m http.server`, serve from the repo root so `./vendor/` resolves correctly.
 
 **SVG rendering falls back to canvas**
 Some PDF.js bundles/browser combinations may not expose SVG rendering APIs. The viewer logs a console warning/error and falls back to canvas rendering automatically; use `svg=0` to force canvas explicitly.
@@ -444,7 +439,7 @@ Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once in PowerShell, or
 
 - The HTTP server binds **only to `127.0.0.1`** — it is never reachable from the network.
 - PDFs are copied into a temporary directory under `/tmp` (Linux/macOS) or `%TEMP%` (Windows) and served from there. The original file is never modified.
-- By default, PDF.js and its worker are fetched from `unpkg.com`. The main script tag includes an SRI hash; vendor locally (see above) for fully offline or air-gapped use.
+- PDF.js and its worker load from the bundled `vendor/` folder copied into each temp session — no external fetch at runtime.
 - Temporary directories are left on disk after the viewer closes, but idle servers exit after 30 minutes. Clean temp dirs with `rm -rf /tmp/zen-pdf.*` on Linux/macOS or `Remove-Item $env:TEMP\zen-pdf-*` on Windows if disk space is a concern.
 
 ---

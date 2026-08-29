@@ -39,6 +39,9 @@ fi
 
 # --- locate viewer -----------------------------------------------------------
 
+# Reap stale temp dirs older than 7 days (best-effort).
+find /tmp -maxdepth 1 -type d -name 'zen-pdf.*' -mtime +7 -exec rm -rf {} + 2>/dev/null || true
+
 # Nix and manual installs can override the data directory.
 PDFJS_DIR="${ZEN_PDF_VIEWER_DATA_DIR:-$HOME/.local/share/zen-pdf-viewer}"
 if [ ! -f "$PDFJS_DIR/viewer.html" ] && [ -d "$HOME/Library" ]; then
@@ -71,6 +74,13 @@ cp -a "$SERVER_PY" "$TMPDIR/" || {
   rm -rf "$TMPDIR"
   exit 1
 }
+if [ -d "$PDFJS_DIR/vendor" ]; then
+  cp -a "$PDFJS_DIR/vendor" "$TMPDIR/" || {
+    echo "Failed to copy vendor/" >&2
+    rm -rf "$TMPDIR"
+    exit 1
+  }
+fi
 
 # --- resolve PDF -------------------------------------------------------------
 
