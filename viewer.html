@@ -681,11 +681,24 @@ input[type="range"] { accent-color: #4ade7f; }
     });
   }
 
+  function clearSvgImageZenCache() {
+    state.svgImageZenCache.clear();
+  }
+
   async function applyZenToSvgImages(svg, keepImagesColor) {
     const images = [...svg.querySelectorAll("image")];
     await Promise.all(images.map(async (img) => {
       const href = img.getAttribute("href") || img.getAttribute("xlink:href");
       if (!href || href.startsWith("#")) return;
+
+      const cacheKey = `${keepImagesColor ? 1 : 0}:${state.pageless ? 1 : 0}:${href}`;
+      const cached = state.svgImageZenCache.get(cacheKey);
+      if (cached) {
+        img.setAttribute("href", cached);
+        img.removeAttribute("xlink:href");
+        img.style.filter = "";
+        return;
+      }
 
       const w = Math.max(1, Math.floor(parseFloat(img.getAttribute("width")) || 0));
       const h = Math.max(1, Math.floor(parseFloat(img.getAttribute("height")) || 0));
@@ -703,7 +716,9 @@ input[type="range"] { accent-color: #4ade7f; }
       });
       ctx.drawImage(imageEl, 0, 0, w, h);
       applyZenFilter(ctx, w, h, keepImagesColor);
-      img.setAttribute("href", canvas.toDataURL("image/png"));
+      const dataUrl = canvas.toDataURL("image/png");
+      state.svgImageZenCache.set(cacheKey, dataUrl);
+      img.setAttribute("href", dataUrl);
       img.removeAttribute("xlink:href");
       img.style.filter = "";
     }));
@@ -1353,6 +1368,7 @@ input[type="range"] { accent-color: #4ade7f; }
   function replaceWithPlaceholder(pageNumber) {
     const existing = document.getElementById(`page-${pageNumber}`);
     if (!existing || existing.parentNode !== container) return;
+    if (state.pageObserver) state.pageObserver.unobserve(existing);
     const placeholder = createPlaceholder(pageNumber);
     container.replaceChild(placeholder, existing);
     if (state.pageObserver) state.pageObserver.observe(placeholder);
@@ -1508,6 +1524,7 @@ input[type="range"] { accent-color: #4ade7f; }
 
   async function rerenderRenderedPages() {
     if (!state.pdfDoc) return;
+    clearSvgImageZenCache();
     updateCurrentPageFromScroll();
     const pages = getRefreshPageOrder();
     const anchor = getViewportAnchor();
