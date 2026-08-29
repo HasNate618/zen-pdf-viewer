@@ -225,7 +225,7 @@ input[type="range"] { accent-color: #4ade7f; }
       <div class="keybind-key">Escape, ?</div><div class="keybind-desc">Open/close keybinds viewer</div><div class="keybind-key">:</div><div class="keybind-desc">Goto page number</div>
       <div class="keybind-key">1-9</div><div class="keybind-desc">Go to bookmark slots (default pages 1-9)</div><div class="keybind-key">Alt+1-9</div><div class="keybind-desc">Assign the current viewport position to a bookmark slot</div>
       <div class="keybind-key">r</div><div class="keybind-desc">Rotate by 90 degrees</div><div class="keybind-key">z</div><div class="keybind-desc">Toggle Zen mode</div>
-      <div class="keybind-key">c</div><div class="keybind-desc">Toggle color in Zen mode</div><div class="keybind-key">p</div><div class="keybind-desc">Toggle pageless & compression</div>
+      <div class="keybind-key">c</div><div class="keybind-desc">Toggle color in Zen mode</div><div class="keybind-key">p</div><div class="keybind-desc">Toggle pageless transparent layout</div>
       <div class="keybind-key">d</div><div class="keybind-desc">Toggle dual page view</div><div class="keybind-key">F11</div><div class="keybind-desc">Toggle fullscreen mode</div>
       <div class="keybind-key">=, +, -</div><div class="keybind-desc">Zoom in / out</div><div class="keybind-key">0</div><div class="keybind-desc">Reset zoom to fit the page width</div>
       <div class="keybind-key">R</div><div class="keybind-desc">Reload document</div><div class="keybind-key">q</div><div class="keybind-desc">Quit</div>
@@ -700,6 +700,7 @@ input[type="range"] { accent-color: #4ade7f; }
 
   function clearSvgImageZenCache() {
     state.svgImageZenCache.clear();
+    zenRecolorLutCache.clear();
   }
 
   async function applyZenToSvgImages(svg, keepImagesColor, pageBg = null) {
@@ -787,6 +788,16 @@ input[type="range"] { accent-color: #4ade7f; }
     else document.documentElement.classList.remove("pageless");
     if (state.dualMode) document.documentElement.classList.add("dual-mode");
     else document.documentElement.classList.remove("dual-mode");
+  }
+
+  async function applyViewerModeChange({ adjustScale = false } = {}) {
+    clearSvgImageZenCache();
+    updateModeClass();
+    if (adjustScale) {
+      await adjustScaleToMode({ pageNumber: state.currentPage });
+    }
+    await resetAndRender();
+    alignFitWidthView();
   }
 
 
@@ -1931,32 +1942,34 @@ input[type="range"] { accent-color: #4ade7f; }
 
       // rotate (r), zen toggle (z), and color toggle (c)
        if (e.key === 'r' && !e.ctrlKey) { state.rotation = (state.rotation + 90) % 360; await adjustScaleToMode(); await resetAndRender(); alignFitWidthView(); e.preventDefault(); return; }
-       if (e.key === 'z') { state.zenMode = !state.zenMode; updateModeClass(); await rerenderRenderedPages(); e.preventDefault(); return; }
-       if (e.key === 'c') { state.keepImagesColor = !state.keepImagesColor; await rerenderRenderedPages(); e.preventDefault(); return; }
+       if (e.key === 'z') {
+         state.zenMode = !state.zenMode;
+         // Zen off with pageless still on leaves normal colors on a transparent
+         // layout; keep them aligned when toggling the main Zen switch.
+         state.pageless = state.zenMode;
+         await applyViewerModeChange({ adjustScale: true });
+         e.preventDefault();
+         return;
+       }
+       if (e.key === 'c') { state.keepImagesColor = !state.keepImagesColor; await applyViewerModeChange(); e.preventDefault(); return; }
 
       // dual-page mode toggle
       if (e.key === 'd') {
-        const anchor = getViewportAnchor();
         state.dualMode = !state.dualMode;
-        updateModeClass();
-        await adjustScaleToMode();
-         await resetAndRender();
-         restoreViewportAnchor(anchor);
-         alignFitWidthView();
+        await applyViewerModeChange({ adjustScale: true });
          e.preventDefault();
          return;
        }
 
-      // pageless & compression toggle
+      // pageless layout toggle (only meaningful while Zen is on)
       if (e.key === 'p') {
-        const anchor = getViewportAnchor();
-        state.pageless = !state.pageless;
-        state.compress = !state.compress;
-        updateModeClass();
-        await adjustScaleToMode();
-         await resetAndRender();
-         restoreViewportAnchor(anchor);
-         alignFitWidthView();
+        if (!state.zenMode) {
+          state.zenMode = true;
+          state.pageless = true;
+        } else {
+          state.pageless = !state.pageless;
+        }
+        await applyViewerModeChange({ adjustScale: true });
          e.preventDefault();
          return;
        }
