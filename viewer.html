@@ -547,7 +547,7 @@ input[type="range"] { accent-color: #4ade7f; }
     return out;
   }
 
-  function buildBackgroundMask(d, w, h, pageBg) {
+  function buildBackgroundMask(d, w, h, pageBg, { includeFringe = true } = {}) {
     const base = new Uint8Array(w * h);
     for (let p = 0; p < w * h; p++) {
       const i = p * 4;
@@ -555,8 +555,10 @@ input[type="range"] { accent-color: #4ade7f; }
       if (isBackgroundPixel(d[i], d[i + 1], d[i + 2], d[i + 3], pageBg)) base[p] = 1;
     }
 
-    const nearBg = dilateMaskSquare(base, w, h, 2);
     const mask = base.slice();
+    if (!includeFringe) return mask;
+
+    const nearBg = dilateMaskSquare(base, w, h, 2);
 
     for (let y = 1; y < h - 1; y++) {
       for (let x = 1; x < w - 1; x++) {
@@ -586,7 +588,8 @@ input[type="range"] { accent-color: #4ade7f; }
     const pageBg = knownPageBg || detectCanvasBackground(d, w, h);
 
     if (state.pageless && w > 2 && h > 2) {
-      const bgMask = buildBackgroundMask(d, w, h, pageBg);
+      // Fringe expansion eats text anti-aliasing; strict paper mask only in pageless.
+      const bgMask = buildBackgroundMask(d, w, h, pageBg, { includeFringe: false });
       for (let p = 0; p < w * h; p++) {
         if (!bgMask[p]) continue;
         applyPaperTreatment(d, p * 4);
@@ -612,11 +615,6 @@ input[type="range"] { accent-color: #4ade7f; }
       d[i] = nr;
       d[i + 1] = ng;
       d[i + 2] = nb;
-
-      if (state.pageless && !pageBg?.isDark) {
-        const post = pixelLumaChroma(nr, ng, nb);
-        if (post.luma < 14) d[i + 3] = 0;
-      }
     }
 
     ctx.putImageData(img, 0, 0);
@@ -685,6 +683,23 @@ input[type="range"] { accent-color: #4ade7f; }
     return best;
   }
 
+  function clearPageBackgroundRect(svg, viewport, pageBg) {
+    if (!pageBg) return;
+    const vw = parseFloat(svg.getAttribute("width")) || viewport?.width || 0;
+    const vh = parseFloat(svg.getAttribute("height")) || viewport?.height || 0;
+    svg.querySelectorAll("rect").forEach((el) => {
+      if (el.closest("defs")) return;
+      const w = parseFloat(el.getAttribute("width") || 0);
+      const h = parseFloat(el.getAttribute("height") || 0);
+      if (!vw || !vh || w < vw * 0.7 || h < vh * 0.7) return;
+      const fill = el.getAttribute("fill") || el.style?.fill;
+      if (!paintMatchesBackground(fill, pageBg)) return;
+      el.setAttribute("fill", "none");
+      el.setAttribute("fill-opacity", "0");
+      if (el.style) el.style.fill = "none";
+    });
+  }
+
   function clearBackgroundSvgPaints(svg, pageBg) {
     const paintAttrs = ["fill", "stroke"];
     svg.querySelectorAll("*").forEach((el) => {
@@ -750,6 +765,16 @@ input[type="range"] { accent-color: #4ade7f; }
   async function applySvgZenStyle(svg, keepImagesColor, viewport) {
     svg.style.filter = "";
     const pageBg = detectSvgBackground(svg, viewport);
+
+    if (state.pageless) {
+      clearPageBackgroundRect(svg, viewport, pageBg);
+      const rootFilter = pageBg?.isDark
+        ? (keepImagesColor ? "" : zen.filterGrayscale)
+        : (keepImagesColor ? zen.filterKeepHue : zen.filterMono);
+      if (rootFilter) svg.style.filter = rootFilter;
+      return;
+    }
+
     clearBackgroundSvgPaints(svg, pageBg);
     await applyZenToSvgImages(svg, keepImagesColor, pageBg);
 
