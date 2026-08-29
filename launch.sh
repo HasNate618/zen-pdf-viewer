@@ -104,10 +104,11 @@ nohup python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$TMPDIR" \
   >/dev/null 2>&1 &
 SERVER_PID=$!
 
-# Wait until the server is up (up to 3 s)
+# Wait until the server is up (up to 3 s).
+# Probe with python3 (already required) so wget-only systems without curl work.
 ready=0
 for _ in $(seq 1 30); do
-  if curl -fsS "http://127.0.0.1:$PORT/viewer.html" >/dev/null 2>&1; then
+  if python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:$PORT/viewer.html', timeout=1)" >/dev/null 2>&1; then
     ready=1; break
   fi
   sleep 0.1

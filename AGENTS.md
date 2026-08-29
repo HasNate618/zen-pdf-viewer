@@ -31,7 +31,7 @@ If a script is necessary, keep it small, shell-compatible, and comfortable for P
 - Run `python3 -m http.server 8000 --bind 127.0.0.1` so the repo is served locally.
 - In another terminal, copy a sample PDF to /tmp or point the viewer to a known path on the system.
 - Open a browser and hit `http://127.0.0.1:8000/viewer.html?file=/tmp/doc.pdf&zen=1&imgcolor=0`.
-- Verify that the keyboard shortcuts work (J/K for page navigation, Z to toggle Zen mode, etc.).
+- Verify that the keyboard shortcuts work (J/K for page navigation, z to toggle Zen mode, etc.).
 - Confirm the text layer remains selectable by dragging a pointer across text elements.
 - Watch for console errors related to PDF.js fetch or worker loading and note them in the review.
 - **Test page caching behavior:** For small PDFs (≤150 pages), scroll through and verify pages remain rendered (no placeholders). For large PDFs (>150 pages), verify that an LRU cache of ~50 pages is maintained (inspect `getLoadedPages()` in console to see cache size and which pages are loaded).
@@ -49,7 +49,7 @@ Rotate the document (press r) and ensure the viewport anchor is restored after r
 Toggle dual-page mode with d and look for layout alignment issues; the CSS grid expects centered content.
 Enable Zen mode, toggle color preservation (c), and check Zen rendering behaves as expected (SVG filter path or canvas fallback path).
 Resize the browser window aggressively to trigger the resize debounce and verify SVG sharpness/canvas fallback DPI behavior stays appropriate.
-Try page jumps via gg and G to make sure the jump-back and jump-forward stacks behave predictably.
+Try page jumps via g and G to make sure the jump-back and jump-forward stacks behave predictably.
 Use Alt+1-9 to save a bookmark slot and 1-9 to jump back to that position; verify the target still lands correctly after a resize.
 Trigger the toast dismissal flow and make sure cookies suppress repeate invites; check the console for suppressed exceptions.
 Open the keybind overlay (Esc) and ensure compactKeybindsTable still renders clean table markup.
@@ -120,7 +120,7 @@ Checking these paths manually is the most reliable regression guard because ther
 - When adjusting rendering logic, temporarily log `state.scale`, `state.rotation`, or render tokens to see how often they change.
 - For layout regressions, inspect computed styles for `#viewerContainer` or `.pageShell` to verify new rules behave as expected.
 - Keep an eye on `state.pageCache` size; clearing it before re-rendering prevents stale page data after zoom changes.
-- When adding new keyboard shortcuts, describe them in the keybind overlay markup and ensure they respect the 800ms combo window.
+- When adding new keyboard shortcuts, describe them in the keybind overlay markup and make sure they fire immediately (there is no multi-key chord/combo window today).
 - Run manual scroll tests to confirm `updateCurrentPageFromScroll` correctly updates `state.currentPage` after dynamic layout changes.
 - Document any new instrumentation in README so future agents know what to expect from the JS console.
 - If canvas filtering slows rendering, adjust `applyZenFilter` heuristics rather than adding heavy instrumentation.

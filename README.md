@@ -323,11 +323,11 @@ The launcher copies the PDF into a temporary directory, starts a local HTTP serv
 | `Ctrl+d` / `Ctrl+u` | Half-page down / up |
 | `Ctrl+t` / `Ctrl+y` | Half-page left / right |
 | `Space` / `b` | Page down / page up |
-| `gg` | Go to first page |
+| `g` | Go to first page |
 | `G` | Go to last page |
 | `1-9` | Go to bookmark slot (defaults to pages 1-9) |
 | `Alt+1-9` | Assign the current viewport position to a bookmark slot |
-| `/` | Go to page number (prompt) |
+| `:` | Go to page number (prompt) |
 | `P` | Snap to nearest page |
 | `H` / `L` | Scroll to top / bottom of current page |
 | `Ctrl+o` / `Ctrl+i` | Jump backward / forward (jump list) |
@@ -337,7 +337,7 @@ The launcher copies the PDF into a temporary directory, starts a local HTTP serv
 | `c` | Toggle color preservation in Zen mode |
 | `d` | Toggle dual-page view |
 | `p` | Toggle pageless + compression mode |
-| `=` / `-` | Zoom in / out |
+| `=` / `+` / `-` | Zoom in / out |
 | `0` | Reset zoom to fit the page width |
 | `R` | Reload document |
 | `F11` | Toggle fullscreen |

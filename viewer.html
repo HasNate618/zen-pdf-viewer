@@ -60,7 +60,6 @@ html, body {
   .keybinds-grid > .keybind-desc:nth-child(2) { border-top: none; }
 }
 .keybind-key { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 7px 8px 7px 0; border-top: 1px solid rgba(255,255,255,0.03); }
-.keybind-key:nth-child(4n+1), .keybind-key:nth-child(4n+2) { border-top: none; }
 /* Remove top border from first four children (first row) */
 .keybinds-grid > .keybind-key:nth-child(-n+4) { border-top: none; }
 .keybind-desc { color: #e6eef0; font-size:14px; line-height:1.45; opacity:0.95; padding: 7px 8px 7px 0; border-top: 1px solid rgba(255,255,255,0.03); display: flex; align-items: center; }
@@ -210,10 +209,9 @@ input[type="range"] { accent-color: #4ade7f; }
       <div class="keybind-key">Escape, ?</div><div class="keybind-desc">Open/close keybinds viewer</div><div class="keybind-key">:</div><div class="keybind-desc">Goto page number</div>
       <div class="keybind-key">1-9</div><div class="keybind-desc">Go to bookmark slots (default pages 1-9)</div><div class="keybind-key">Alt+1-9</div><div class="keybind-desc">Assign the current viewport position to a bookmark slot</div>
       <div class="keybind-key">r</div><div class="keybind-desc">Rotate by 90 degrees</div><div class="keybind-key">z</div><div class="keybind-desc">Toggle Zen mode</div>
-      <div class="keybind-key">c</div><div class="keybind-desc">Toggle color in Zen mode</div><div class="keybind-key">f</div><div class="keybind-desc">Find in document</div>
-      <div class="keybind-key">p</div><div class="keybind-desc">Toggle pageless & compression</div><div class="keybind-key">d</div><div class="keybind-desc">Toggle dual page view</div>
-      <div class="keybind-key">F11</div><div class="keybind-desc">Toggle fullscreen mode</div><div class="keybind-key">=, -</div><div class="keybind-desc">Zoom in / out</div>
-      <div class="keybind-key">0</div><div class="keybind-desc">Reset zoom to fit the page width</div>
+      <div class="keybind-key">c</div><div class="keybind-desc">Toggle color in Zen mode</div><div class="keybind-key">p</div><div class="keybind-desc">Toggle pageless & compression</div>
+      <div class="keybind-key">d</div><div class="keybind-desc">Toggle dual page view</div><div class="keybind-key">F11</div><div class="keybind-desc">Toggle fullscreen mode</div>
+      <div class="keybind-key">=, +, -</div><div class="keybind-desc">Zoom in / out</div><div class="keybind-key">0</div><div class="keybind-desc">Reset zoom to fit the page width</div>
       <div class="keybind-key">R</div><div class="keybind-desc">Reload document</div><div class="keybind-key">q</div><div class="keybind-desc">Quit</div>
     </div>
     <div style="text-align:right; margin-top:8px"><button id="keybindsCloseBtn">Close</button></div>
@@ -1272,23 +1270,11 @@ input[type="range"] { accent-color: #4ade7f; }
     };
   }
 
+  // Exposed for the manual cache-verification flow described in AGENTS.md
+  window.getLoadedPages = getLoadedPages;
+  window.unloadPage = unloadPage;
+
   function buildPlaceholders() {
-    // Preserve the currently visible page to avoid flash
-    const centerY = window.scrollY + window.innerHeight / 2;
-    let centerPage = null;
-    let minDist = Infinity;
-    
-    for (let i = 1; i <= (state.pdfDoc?.numPages || 0); i++) {
-      const el = document.getElementById(`page-${i}`);
-      if (!el) continue;
-      const pageCenter = el.offsetTop + el.offsetHeight / 2;
-      const dist = Math.abs(pageCenter - centerY);
-      if (dist < minDist) {
-        minDist = dist;
-        centerPage = i;
-      }
-    }
-    
     container.innerHTML = "";
     state.renderedPages.clear();
     state.renderedPagesMru = [];
@@ -1668,6 +1654,9 @@ input[type="range"] { accent-color: #4ade7f; }
         return;
       }
 
+      // Everything below needs a loaded document
+      if (!state.pdfDoc) return;
+
       const keyLower = typeof e.key === 'string' ? e.key.toLowerCase() : '';
       const bookmarkKey = /^[1-9]$/.test(e.key);
       if (e.altKey && !e.ctrlKey && !e.metaKey && bookmarkKey) {
@@ -1760,7 +1749,6 @@ input[type="range"] { accent-color: #4ade7f; }
        if (e.key === 'r' && !e.ctrlKey) { state.rotation = (state.rotation + 90) % 360; await adjustScaleToMode(); await resetAndRender(); alignFitWidthView(); e.preventDefault(); return; }
        if (e.key === 'z') { state.zenMode = !state.zenMode; updateModeClass(); await rerenderRenderedPages(); e.preventDefault(); return; }
        if (e.key === 'c') { state.keepImagesColor = !state.keepImagesColor; await rerenderRenderedPages(); e.preventDefault(); return; }
-       if (e.key === 'f') { state.pdfDoc.findController?.executeCommand('find'); e.preventDefault(); return; }
 
       // dual-page mode toggle
       if (e.key === 'd') {
@@ -1795,8 +1783,8 @@ input[type="range"] { accent-color: #4ade7f; }
       // fullscreen
       if (e.key === 'F11') { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{}); else document.exitFullscreen().catch(()=>{}); e.preventDefault(); return; }
 
-      // zoom = -
-       if (e.key === '=') { state.scale = Math.min(state.scale * 1.1, 4); await rerenderRenderedPages(); e.preventDefault(); return; }
+      // zoom = + -
+       if (e.key === '=' || e.key === '+') { state.scale = Math.min(state.scale * 1.1, 4); await rerenderRenderedPages(); e.preventDefault(); return; }
        if (e.key === '-') { state.scale = Math.max(state.scale / 1.1, 0.1); await rerenderRenderedPages(); e.preventDefault(); return; }
       if (e.key === '0') {
          await resetToFitWidth({ pageNumber: state.currentPage });
@@ -1814,7 +1802,9 @@ input[type="range"] { accent-color: #4ade7f; }
       if (e.key === ':') { handleGotoPagePrompt(); e.preventDefault(); return; }
 
       // quit
-      if (e.key === 'q') { try { window.close(); } catch(err) { location.href='about:blank'; } e.preventDefault(); return; }
+      // window.close() is a silent no-op (does not throw) when the browser
+      // refuses because the window was not script-opened, so check window.closed.
+      if (e.key === 'q') { e.preventDefault(); window.close(); if (!window.closed) location.href = 'about:blank'; return; }
 
     });
   }
