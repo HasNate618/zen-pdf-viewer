@@ -374,7 +374,9 @@ input[type="range"] { accent-color: #4ade7f; }
     ];
   }
 
-  function zenRecolorRgb(r, g, b, keepImagesColor, pageBg) {
+  const zenRecolorLutCache = new Map();
+
+  function zenRecolorRgbRaw(r, g, b, keepImagesColor, pageBg) {
     if (pageBg?.isDark) {
       if (keepImagesColor) return [r, g, b];
       const gray = 0.299 * r + 0.587 * g + 0.114 * b;
@@ -387,6 +389,33 @@ input[type="range"] { accent-color: #4ade7f; }
     const gray = 0.299 * r + 0.587 * g + 0.114 * b;
     const inv = 255 - gray;
     return [inv, inv, inv];
+  }
+
+  function getZenRecolorLut(keepImagesColor, pageBg) {
+    const key = `${keepImagesColor ? 1 : 0}:${pageBg?.isDark ? 1 : 0}`;
+    if (zenRecolorLutCache.has(key)) return zenRecolorLutCache.get(key);
+    const lut = new Uint8Array(32 * 32 * 32 * 3);
+    for (let ri = 0; ri < 32; ri++) {
+      for (let gi = 0; gi < 32; gi++) {
+        for (let bi = 0; bi < 32; bi++) {
+          const r = ri * 8 + 4;
+          const g = gi * 8 + 4;
+          const b = bi * 8 + 4;
+          const idx = (ri * 32 * 32 + gi * 32 + bi) * 3;
+          const [nr, ng, nb] = zenRecolorRgbRaw(r, g, b, keepImagesColor, pageBg);
+          lut[idx] = nr;
+          lut[idx + 1] = ng;
+          lut[idx + 2] = nb;
+        }
+      }
+    }
+    zenRecolorLutCache.set(key, lut);
+    return lut;
+  }
+
+  function lookupZenRecolor(lut, r, g, b) {
+    const idx = ((r >> 3) * 32 * 32 + (g >> 3) * 32 + (b >> 3)) * 3;
+    return [lut[idx], lut[idx + 1], lut[idx + 2]];
   }
 
   function rgbDistance(r1, g1, b1, r2, g2, b2) {
@@ -467,33 +496,57 @@ input[type="range"] { accent-color: #4ade7f; }
     data[index + 3] = 255;
   }
 
+  function dilateMaskSquare(mask, w, h, radius) {
+    const tmp = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let hit = 0;
+        for (let dx = -radius; dx <= radius; dx++) {
+          const nx = x + dx;
+          if (nx >= 0 && nx < w && mask[y * w + nx]) {
+            hit = 1;
+            break;
+          }
+        }
+        tmp[y * w + x] = hit;
+      }
+    }
+    const out = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let hit = 0;
+        for (let dy = -radius; dy <= radius; dy++) {
+          const ny = y + dy;
+          if (ny >= 0 && ny < h && tmp[ny * w + x]) {
+            hit = 1;
+            break;
+          }
+        }
+        out[y * w + x] = hit;
+      }
+    }
+    return out;
+  }
+
   function buildBackgroundMask(d, w, h, pageBg) {
-    const mask = new Uint8Array(w * h);
+    const base = new Uint8Array(w * h);
     for (let p = 0; p < w * h; p++) {
       const i = p * 4;
       if (d[i + 3] === 0) continue;
-      if (isBackgroundPixel(d[i], d[i + 1], d[i + 2], d[i + 3], pageBg)) mask[p] = 1;
+      if (isBackgroundPixel(d[i], d[i + 1], d[i + 2], d[i + 3], pageBg)) base[p] = 1;
     }
+
+    const nearBg = dilateMaskSquare(base, w, h, 2);
+    const mask = base.slice();
 
     for (let y = 1; y < h - 1; y++) {
       for (let x = 1; x < w - 1; x++) {
         const p = y * w + x;
-        if (mask[p]) continue;
+        if (base[p] || !nearBg[p]) continue;
         const i = p * 4;
         if (d[i + 3] === 0) continue;
         const { luma, chroma } = pixelLumaChroma(d[i], d[i + 1], d[i + 2]);
         if (chroma > zen.haloChromaMax) continue;
-
-        let nearBg = false;
-        for (let dy = -2; dy <= 2 && !nearBg; dy++) {
-          for (let dx = -2; dx <= 2; dx++) {
-            if (mask[(y + dy) * w + (x + dx)] === 1) {
-              nearBg = true;
-              break;
-            }
-          }
-        }
-        if (!nearBg) continue;
 
         if (pageBg?.isDark) {
           if (luma <= pageBg.luma + zen.bgFringeLuma && chroma <= zen.paperChromaMax + 8) {
@@ -521,6 +574,8 @@ input[type="range"] { accent-color: #4ade7f; }
       }
     }
 
+    const recolorLut = getZenRecolorLut(keepImagesColor, pageBg);
+
     for (let i = 0; i < d.length; i += 4) {
       const a = d[i + 3];
       if (a === 0) continue;
@@ -534,7 +589,7 @@ input[type="range"] { accent-color: #4ade7f; }
         continue;
       }
 
-      const [nr, ng, nb] = zenRecolorRgb(r, g, b, keepImagesColor, pageBg);
+      const [nr, ng, nb] = lookupZenRecolor(recolorLut, r, g, b);
       d[i] = nr;
       d[i + 1] = ng;
       d[i + 2] = nb;
