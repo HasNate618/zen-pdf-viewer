@@ -336,10 +336,10 @@ The launcher copies the PDF into a temporary directory, starts a local HTTP serv
 | `Ctrl+o` / `Ctrl+i` | Jump backward / forward (jump list) |
 | `Esc` | Open / close keybindings overlay |
 | `r` | Rotate 90° |
-| `z` | Toggle Zen mode (also enables/disables pageless layout) |
+| `z` | Toggle Zen reading filter (grayscale / invert) |
 | `c` | Toggle color preservation in Zen mode |
 | `d` | Toggle dual-page view |
-| `p` | Toggle pageless layout while in Zen (re-enables Zen if off) |
+| `p` | Toggle pageless transparent layout |
 | `=` / `+` / `-` | Zoom in / out |
 | `0` | Reset zoom to fit the page width |
 | `R` | Reload document |

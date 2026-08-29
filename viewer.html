@@ -224,8 +224,8 @@ input[type="range"] { accent-color: #4ade7f; }
       <div class="keybind-key">H, L</div><div class="keybind-desc">Goto top or bottom of current page</div><div class="keybind-key">^o, ^i</div><div class="keybind-desc">Move backward/forward through jump list</div>
       <div class="keybind-key">Escape, ?</div><div class="keybind-desc">Open/close keybinds viewer</div><div class="keybind-key">:</div><div class="keybind-desc">Goto page number</div>
       <div class="keybind-key">1-9</div><div class="keybind-desc">Go to bookmark slots (default pages 1-9)</div><div class="keybind-key">Alt+1-9</div><div class="keybind-desc">Assign the current viewport position to a bookmark slot</div>
-      <div class="keybind-key">r</div><div class="keybind-desc">Rotate by 90 degrees</div><div class="keybind-key">z</div><div class="keybind-desc">Toggle Zen mode</div>
-      <div class="keybind-key">c</div><div class="keybind-desc">Toggle color in Zen mode</div><div class="keybind-key">p</div><div class="keybind-desc">Toggle pageless transparent layout</div>
+      <div class="keybind-key">r</div><div class="keybind-desc">Rotate by 90 degrees</div>      <div class="keybind-key">z</div><div class="keybind-desc">Toggle Zen reading filter</div>
+      <div class="keybind-key">c</div><div class="keybind-desc">Toggle color in Zen mode</div><div class="keybind-key">p</div><div class="keybind-desc">Toggle pageless layout</div>
       <div class="keybind-key">d</div><div class="keybind-desc">Toggle dual page view</div><div class="keybind-key">F11</div><div class="keybind-desc">Toggle fullscreen mode</div>
       <div class="keybind-key">=, +, -</div><div class="keybind-desc">Zoom in / out</div><div class="keybind-key">0</div><div class="keybind-desc">Reset zoom to fit the page width</div>
       <div class="keybind-key">R</div><div class="keybind-desc">Reload document</div><div class="keybind-key">q</div><div class="keybind-desc">Quit</div>
@@ -1944,9 +1944,6 @@ input[type="range"] { accent-color: #4ade7f; }
        if (e.key === 'r' && !e.ctrlKey) { state.rotation = (state.rotation + 90) % 360; await adjustScaleToMode(); await resetAndRender(); alignFitWidthView(); e.preventDefault(); return; }
        if (e.key === 'z') {
          state.zenMode = !state.zenMode;
-         // Zen off with pageless still on leaves normal colors on a transparent
-         // layout; keep them aligned when toggling the main Zen switch.
-         state.pageless = state.zenMode;
          await applyViewerModeChange({ adjustScale: true });
          e.preventDefault();
          return;
@@ -1961,14 +1958,9 @@ input[type="range"] { accent-color: #4ade7f; }
          return;
        }
 
-      // pageless layout toggle (only meaningful while Zen is on)
+      // pageless layout toggle
       if (e.key === 'p') {
-        if (!state.zenMode) {
-          state.zenMode = true;
-          state.pageless = true;
-        } else {
-          state.pageless = !state.pageless;
-        }
+        state.pageless = !state.pageless;
         await applyViewerModeChange({ adjustScale: true });
          e.preventDefault();
          return;
