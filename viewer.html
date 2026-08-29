@@ -193,6 +193,22 @@ input[type="range"] { accent-color: #4ade7f; }
   padding: 12px;
   display: none;
 }
+#renderStatus {
+  position: fixed;
+  bottom: 12px;
+  right: 12px;
+  z-index: 900;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #e6eef0;
+  background: rgba(14, 14, 18, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+#renderStatus[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -218,9 +234,10 @@ input[type="range"] { accent-color: #4ade7f; }
   </div>
 </div>
 <div id="error"></div>
+<div id="renderStatus" hidden aria-live="polite"></div>
 <div id="viewerContainer"></div>
 
-<script src="https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.min.js" integrity="sha384-uLiAv4VcjM5H2Jsqzl8EajEaxPugj1CIzQaCjQ8c5//vC+elhxO5pZfXGxoLQi1W" crossorigin="anonymous"></script>
+<script src="./vendor/pdf.min.js"></script>
 <script>
 (() => {
   const params = new URLSearchParams(location.search);
@@ -286,6 +303,7 @@ input[type="range"] { accent-color: #4ade7f; }
 
   const container = document.getElementById("viewerContainer");
   const errorEl = document.getElementById("error");
+  const renderStatusEl = document.getElementById("renderStatus");
   const keybindsOverlay = document.getElementById("keybindsOverlay");
   const keybindsClose = document.getElementById("keybindsClose");
   const keybindsCloseBtn = document.getElementById("keybindsCloseBtn");
@@ -562,10 +580,10 @@ input[type="range"] { accent-color: #4ade7f; }
     return mask;
   }
 
-  function applyZenFilter(ctx, w, h, keepImagesColor) {
+  function applyZenFilter(ctx, w, h, keepImagesColor, knownPageBg = null) {
     const img = ctx.getImageData(0, 0, w, h);
     const d = img.data;
-    const pageBg = detectCanvasBackground(d, w, h);
+    const pageBg = knownPageBg || detectCanvasBackground(d, w, h);
 
     if (state.pageless && w > 2 && h > 2) {
       const bgMask = buildBackgroundMask(d, w, h, pageBg);
@@ -684,7 +702,7 @@ input[type="range"] { accent-color: #4ade7f; }
     state.svgImageZenCache.clear();
   }
 
-  async function applyZenToSvgImages(svg, keepImagesColor) {
+  async function applyZenToSvgImages(svg, keepImagesColor, pageBg = null) {
     const images = [...svg.querySelectorAll("image")];
     await Promise.all(images.map(async (img) => {
       const href = img.getAttribute("href") || img.getAttribute("xlink:href");
@@ -714,7 +732,7 @@ input[type="range"] { accent-color: #4ade7f; }
         imageEl.src = href;
       });
       ctx.drawImage(imageEl, 0, 0, w, h);
-      applyZenFilter(ctx, w, h, keepImagesColor);
+      applyZenFilter(ctx, w, h, keepImagesColor, pageBg);
       const dataUrl = canvas.toDataURL("image/png");
       state.svgImageZenCache.set(cacheKey, dataUrl);
       img.setAttribute("href", dataUrl);
@@ -732,7 +750,7 @@ input[type="range"] { accent-color: #4ade7f; }
     svg.style.filter = "";
     const pageBg = detectSvgBackground(svg, viewport);
     clearBackgroundSvgPaints(svg, pageBg);
-    await applyZenToSvgImages(svg, keepImagesColor);
+    await applyZenToSvgImages(svg, keepImagesColor, pageBg);
 
     const monoFilter = zen.filterMono;
     const colorFilter = zen.filterKeepHue;
@@ -1082,10 +1100,34 @@ input[type="range"] { accent-color: #4ade7f; }
     }
   }
 
-  async function renderPagesWithPool(pageNumbers, token, onRendered) {
-    const concurrency = Math.min(perf.renderConcurrency, pageNumbers.length);
+  function getEffectiveRenderConcurrency() {
+    const cores = navigator.hardwareConcurrency || 4;
+    if (state.largeDoc) return 1;
+    if (cores <= 2) return 1;
+    if (cores <= 4) return 2;
+    return perf.renderConcurrency;
+  }
+
+  function showRenderProgress(done, total) {
+    if (!renderStatusEl) return;
+    if (!total || done >= total) {
+      renderStatusEl.hidden = true;
+      return;
+    }
+    renderStatusEl.hidden = false;
+    renderStatusEl.textContent = `Rendering ${done}/${total} pages…`;
+  }
+
+  function hideRenderProgress() {
+    if (renderStatusEl) renderStatusEl.hidden = true;
+  }
+
+  async function renderPagesWithPool(pageNumbers, token, onRendered, { onProgress } = {}) {
+    const concurrency = Math.min(getEffectiveRenderConcurrency(), pageNumbers.length);
     if (concurrency === 0) return;
     let nextIndex = 0;
+    let completed = 0;
+    const trackProgress = typeof onProgress === "function";
 
     async function worker() {
       while (true) {
@@ -1095,11 +1137,13 @@ input[type="range"] { accent-color: #4ade7f; }
         const pageNo = pageNumbers[idx];
         if (state.renderedPages.has(pageNo)) {
           touchRenderedPageMru(pageNo);
+          if (trackProgress) onProgress(++completed, pageNumbers.length);
           continue;
         }
         const pageNode = await renderPage(pageNo);
         if (token !== state.renderToken) return;
         await onRendered(pageNo, pageNode);
+        if (trackProgress) onProgress(++completed, pageNumbers.length);
       }
     }
 
@@ -1428,6 +1472,9 @@ input[type="range"] { accent-color: #4ade7f; }
     const end = clamp(center + perf.renderAhead, 1, total);
     const order = buildRenderOrder(end - start + 1, center - start + 1)
       .map((idx) => idx + start - 1);
+    const progressOpts = order.length > 8
+      ? { onProgress: (done, total) => showRenderProgress(done, total) }
+      : {};
 
     await renderPagesWithPool(order, token, async (pageNo, pageNode) => {
       if (token !== state.renderToken) return;
@@ -1435,9 +1482,10 @@ input[type="range"] { accent-color: #4ade7f; }
       state.renderedPages.add(pageNo);
       touchRenderedPageMru(pageNo);
       if (!state.isSmallDoc) enforceRenderedPageCacheLimit();
-    });
+    }, progressOpts);
 
     if (token !== state.renderToken) return;
+    if (progressOpts.onProgress) hideRenderProgress();
 
     // For small docs, never auto-unload; for large docs, respect the cache limit
     if (!state.isSmallDoc && state.renderedPages.size > perf.maxRenderedPages) {
@@ -1456,7 +1504,10 @@ input[type="range"] { accent-color: #4ade7f; }
       if (token !== state.renderToken) return;
       swapPageShell(pageNo, pageNode);
       state.renderedPages.add(pageNo);
+    }, {
+      onProgress: (done, total) => showRenderProgress(done, total),
     });
+    hideRenderProgress();
   }
 
   function initPageObserver() {
@@ -1609,6 +1660,38 @@ input[type="range"] { accent-color: #4ade7f; }
     window.scrollTo({ top: Math.max(0, el.offsetTop - 15), behavior: smooth ? "smooth" : "auto" });
   }
 
+  function bookmarkStorageKey() {
+    return `zen-pdf-bookmarks:${file}`;
+  }
+
+  function loadBookmarks() {
+    try {
+      const raw = localStorage.getItem(bookmarkStorageKey());
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      for (const [slot, anchor] of Object.entries(data)) {
+        const slotNo = Number.parseInt(slot, 10);
+        if (slotNo >= 1 && slotNo <= 9 && anchor && typeof anchor === "object") {
+          state.bookmarks.set(slotNo, anchor);
+        }
+      }
+    } catch (_) {
+      // localStorage unavailable or corrupt data — keep defaults
+    }
+  }
+
+  function saveBookmarks() {
+    try {
+      const data = {};
+      for (const [slot, anchor] of state.bookmarks.entries()) {
+        data[slot] = anchor;
+      }
+      localStorage.setItem(bookmarkStorageKey(), JSON.stringify(data));
+    } catch (_) {
+      // localStorage unavailable — bookmarks stay in-memory only
+    }
+  }
+
   function getBookmarkTarget(slot) {
     const total = state.pdfDoc?.numPages || 1;
     const assigned = state.bookmarks.get(slot);
@@ -1621,6 +1704,7 @@ input[type="range"] { accent-color: #4ade7f; }
     const anchor = getViewportAnchor();
     anchor.page = clamp(anchor.page || state.currentPage || slot, 1, state.pdfDoc.numPages || 1);
     state.bookmarks.set(slot, anchor);
+    saveBookmarks();
   }
 
   function goToBookmark(slot) {
@@ -1916,8 +2000,7 @@ input[type="range"] { accent-color: #4ade7f; }
     }
 
     try {
-      pdfjsLib.GlobalWorkerOptions.workerSrc =
-        "https://unpkg.com/pdfjs-dist@2.16.105/build/pdf.worker.min.js";
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.js";
 
      state.pdfDoc = await pdfjsLib.getDocument({
         url: file,
@@ -1927,6 +2010,7 @@ input[type="range"] { accent-color: #4ade7f; }
     state.largeDoc = state.pdfDoc.numPages >= perf.largeDocPages;
     state.isSmallDoc = state.pdfDoc.numPages <= perf.smallDocThreshold;
     state.bookmarks = new Map();
+    loadBookmarks();
     
     if (state.isSmallDoc) {
       perf.renderBehind = state.pdfDoc.numPages;
