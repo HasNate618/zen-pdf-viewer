@@ -788,6 +788,28 @@ input[type="range"] { accent-color: #4ade7f; }
     grid.dataset.compact = '1';
   }
 
+  function findPageNearestToViewportCenter() {
+    if (!state.pdfDoc) {
+      return { page: state.currentPage || 1, element: null, distance: Infinity };
+    }
+    const centerY = window.scrollY + window.innerHeight / 2;
+    let page = state.currentPage || 1;
+    let bestEl = null;
+    let bestDist = Infinity;
+    for (let i = 1; i <= state.pdfDoc.numPages; i++) {
+      const el = document.getElementById(`page-${i}`);
+      if (!el) continue;
+      const pageCenter = el.offsetTop + el.offsetHeight / 2;
+      const dist = Math.abs(pageCenter - centerY);
+      if (dist < bestDist) {
+        bestDist = dist;
+        page = i;
+        bestEl = el;
+      }
+    }
+    return { page, element: bestEl, distance: bestDist };
+  }
+
   function updateCurrentPageFromScroll() {
     if (!state.pdfDoc) return;
     if (state.visiblePages.size > 0) {
@@ -802,17 +824,7 @@ input[type="range"] { accent-color: #4ade7f; }
       state.currentPage = best;
       return;
     }
-    const centerY = window.scrollY + window.innerHeight / 2;
-    let best = state.currentPage || 1;
-    let dist = Infinity;
-    for (let i = 1; i <= state.pdfDoc.numPages; i++) {
-      const el = document.getElementById(`page-${i}`);
-      if (!el) continue;
-      const pageCenter = el.offsetTop + el.offsetHeight / 2;
-      const d = Math.abs(pageCenter - centerY);
-      if (d < dist) { dist = d; best = i; }
-    }
-    state.currentPage = best;
+    state.currentPage = findPageNearestToViewportCenter().page;
   }
 
   async function renderTextLayer(page, viewport, textLayerDiv) {
@@ -1282,20 +1294,9 @@ input[type="range"] { accent-color: #4ade7f; }
     const left = window.scrollX;
     const centerY = window.scrollY + window.innerHeight / 2;
     const centerX = window.scrollX + window.innerWidth / 2;
-    let page = state.currentPage || 1;
-    let bestEl = null;
-    let bestDist = Infinity;
-    for (let i = 1; i <= state.pdfDoc.numPages; i++) {
-      const el = document.getElementById(`page-${i}`);
-      if (!el) continue;
-      const pageCenter = el.offsetTop + el.offsetHeight / 2;
-      const dist = Math.abs(pageCenter - centerY);
-      if (dist < bestDist) {
-        bestDist = dist;
-        page = i;
-        bestEl = el;
-      }
-    }
+    const nearest = findPageNearestToViewportCenter();
+    const page = nearest.page;
+    const bestEl = nearest.element;
     const docHeight = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1);
     const docWidth = Math.max(document.documentElement.scrollWidth - window.innerWidth, 1);
     if (!bestEl) {
@@ -1405,6 +1406,7 @@ input[type="range"] { accent-color: #4ade7f; }
       frag.appendChild(createPlaceholder(i));
     }
     container.appendChild(frag);
+    void prefetchPlaceholderSizes();
   }
 
   function scheduleRenderWindow() {
@@ -1494,11 +1496,36 @@ input[type="range"] { accent-color: #4ade7f; }
   }
 
   function updatePlaceholderSizes() {
-    const size = getEstimatedPageSize();
     for (const child of container.children) {
       if (!child || child.dataset?.placeholder !== "1") continue;
+      const pageNo = Number.parseInt(String(child.id || "").replace("page-", ""), 10);
+      const size = (pageNo && state.pageSizes.get(pageNo)) || getEstimatedPageSize();
       child.style.width = `${size.width}px`;
       child.style.height = `${size.height}px`;
+    }
+  }
+
+  async function prefetchPlaceholderSizes() {
+    if (!state.pdfDoc) return;
+    const total = state.pdfDoc.numPages;
+    const rotation = state.rotation || 0;
+    for (let i = 1; i <= total; i++) {
+      if (state.pageSizes.has(i)) continue;
+      try {
+        const page = await getPdfPage(i);
+        const vp = page.getViewport({ scale: state.scale, rotation });
+        state.pageSizes.set(i, { width: vp.width, height: vp.height });
+        const el = document.getElementById(`page-${i}`);
+        if (el && el.dataset.placeholder === "1") {
+          el.style.width = `${vp.width}px`;
+          el.style.height = `${vp.height}px`;
+        }
+      } catch (_) {
+        break;
+      }
+      if (i % 8 === 0) {
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+      }
     }
   }
 
@@ -1704,19 +1731,7 @@ input[type="range"] { accent-color: #4ade7f; }
         goToPage(best, true, false);
         return;
       }
-      const centerY = window.scrollY + window.innerHeight/2;
-      let best = 1;
-      let bestDist = Infinity;
-      for (let i=1;i<=state.pdfDoc.numPages;i++) {
-        const el = document.getElementById('page-'+i);
-        if (!el) continue;
-        const top = el.offsetTop;
-        const h = el.offsetHeight;
-        const pageCenter = top + h/2;
-        const d = Math.abs(pageCenter - centerY);
-        if (d < bestDist) { bestDist = d; best = i; }
-      }
-      goToPage(best, true, false);
+      goToPage(findPageNearestToViewportCenter().page, true, false);
     }
 
     async function handleGotoPagePrompt() {
