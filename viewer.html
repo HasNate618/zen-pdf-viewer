@@ -504,6 +504,19 @@ input[type="range"] { accent-color: #4ade7f; }
     return luma >= zen.paperLumaMin && chroma <= zen.paperChromaMax;
   }
 
+  // Tighter match for pageless transparency — avoids punching light grey text as paper.
+  function isStrictPaperPixel(r, g, b, a, pageBg) {
+    if (a < 4) return true;
+    const { luma, chroma } = pixelLumaChroma(r, g, b);
+    if (chroma > zen.paperChromaMax) return false;
+    if (pageBg) {
+      if (rgbDistance(r, g, b, pageBg.r, pageBg.g, pageBg.b) > 24) return false;
+      if (pageBg.isDark) return luma <= pageBg.luma + 12;
+      return luma >= pageBg.luma - 12;
+    }
+    return luma >= zen.paperLumaMin && chroma <= zen.paperChromaMax;
+  }
+
   function applyPaperTreatment(data, index) {
     if (state.pageless) {
       data[index + 3] = 0;
@@ -547,12 +560,13 @@ input[type="range"] { accent-color: #4ade7f; }
     return out;
   }
 
-  function buildBackgroundMask(d, w, h, pageBg, { includeFringe = true } = {}) {
+  function buildBackgroundMask(d, w, h, pageBg, { includeFringe = true, strictPaper = false } = {}) {
+    const isPaper = strictPaper ? isStrictPaperPixel : isBackgroundPixel;
     const base = new Uint8Array(w * h);
     for (let p = 0; p < w * h; p++) {
       const i = p * 4;
       if (d[i + 3] === 0) continue;
-      if (isBackgroundPixel(d[i], d[i + 1], d[i + 2], d[i + 3], pageBg)) base[p] = 1;
+      if (isPaper(d[i], d[i + 1], d[i + 2], d[i + 3], pageBg)) base[p] = 1;
     }
 
     const mask = base.slice();
@@ -589,14 +603,16 @@ input[type="range"] { accent-color: #4ade7f; }
 
     if (state.pageless && w > 2 && h > 2) {
       // Fringe expansion eats text anti-aliasing; strict paper mask only in pageless.
-      const bgMask = buildBackgroundMask(d, w, h, pageBg, { includeFringe: false });
+      const bgMask = buildBackgroundMask(d, w, h, pageBg, { includeFringe: false, strictPaper: true });
       for (let p = 0; p < w * h; p++) {
         if (!bgMask[p]) continue;
         applyPaperTreatment(d, p * 4);
       }
     }
 
-    const recolorLut = getZenRecolorLut(keepImagesColor, pageBg);
+    // Pageless always inverts for reading; never treat detected bg as "dark paper".
+    const recolorBg = (state.pageless && pageBg) ? { ...pageBg, isDark: false } : pageBg;
+    const recolorLut = getZenRecolorLut(keepImagesColor, recolorBg);
 
     for (let i = 0; i < d.length; i += 4) {
       const a = d[i + 3];
@@ -768,10 +784,21 @@ input[type="range"] { accent-color: #4ade7f; }
 
     if (state.pageless) {
       clearPageBackgroundRect(svg, viewport, pageBg);
-      const rootFilter = pageBg?.isDark
-        ? (keepImagesColor ? "" : zen.filterGrayscale)
-        : (keepImagesColor ? zen.filterKeepHue : zen.filterMono);
-      if (rootFilter) svg.style.filter = rootFilter;
+      // Raster-heavy pages (e.g. scanned JPEGs) live in <image>; process per-image
+      // instead of a root filter so we don't double-invert or skip bitmap content.
+      await applyZenToSvgImages(svg, keepImagesColor, pageBg);
+      const vectorFilter = keepImagesColor ? zen.filterKeepHue : zen.filterMono;
+      const vectorTags = "path, rect, polygon, circle, ellipse, line, polyline, text, tspan, use";
+      svg.querySelectorAll(vectorTags).forEach((el) => {
+        if (el.closest("image") || el.closest("defs")) return;
+        applySvgElementFilter(el, vectorFilter);
+      });
+      svg.querySelectorAll("g").forEach((group) => {
+        if (group.closest("defs") || group.closest("image")) return;
+        if (group.querySelector("image")) return;
+        if (group.querySelector(vectorTags)) return;
+        applySvgElementFilter(group, vectorFilter);
+      });
       return;
     }
 
