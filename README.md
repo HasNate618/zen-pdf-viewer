@@ -75,7 +75,7 @@ For a one-off install into your profile:
 nix profile install .
 ```
 
-The package installs `zen-pdf-viewer` on your `PATH` with `viewer.html` bundled in the Nix store. Python 3, curl, and `xdg-open` (Linux) are wrapped automatically.
+The package installs `zen-pdf-viewer` on your `PATH` with `viewer.html` and `zen-server.py` bundled in the Nix store. Python 3, curl, and `xdg-open` (Linux) are wrapped automatically.
 
 **NixOS / home-manager** — add the flake as an input and reference `packages.${pkgs.system}.default`, or use an overlay:
 
@@ -104,11 +104,11 @@ python3 -m http.server 8000 --bind 127.0.0.1
    git clone https://github.com/HasNate618/zen-pdf-viewer.git ~/Projects/zen-pdf-viewer
    ```
 
-2. **Copy `viewer.html` to the viewer data directory:**
+2. **Copy `viewer.html` and `zen-server.py` to the viewer data directory:**
 
    ```bash
    mkdir -p ~/.local/share/zen-pdf-viewer
-   cp ~/Projects/zen-pdf-viewer/viewer.html ~/.local/share/zen-pdf-viewer/
+   cp ~/Projects/zen-pdf-viewer/viewer.html ~/Projects/zen-pdf-viewer/zen-server.py ~/.local/share/zen-pdf-viewer/
    ```
 
    > **Migrating from an older install?** If you previously used `~/.local/share/pdfjs`, either copy `viewer.html` there too or update your existing launcher script to point at `~/.local/share/zen-pdf-viewer`.
@@ -138,11 +138,11 @@ python3 -m http.server 8000 --bind 127.0.0.1
    git clone https://github.com/HasNate618/zen-pdf-viewer.git ~/Projects/zen-pdf-viewer
    ```
 
-2. **Copy `viewer.html` to the viewer data directory:**
+2. **Copy `viewer.html` and `zen-server.py` to the viewer data directory:**
 
    ```bash
    mkdir -p "$HOME/Library/Application Support/zen-pdf-viewer"
-   cp ~/Projects/zen-pdf-viewer/viewer.html "$HOME/Library/Application Support/zen-pdf-viewer/"
+   cp ~/Projects/zen-pdf-viewer/viewer.html ~/Projects/zen-pdf-viewer/zen-server.py "$HOME/Library/Application Support/zen-pdf-viewer/"
    ```
 
 3. **Install the launcher:**
@@ -178,12 +178,12 @@ python3 -m http.server 8000 --bind 127.0.0.1
    git clone https://github.com/HasNate618/zen-pdf-viewer.git C:\Tools\zen-pdf-viewer
    ```
 
-2. **Copy `viewer.html` to the viewer data directory:**
+2. **Copy `viewer.html` and `zen-server.py` to the viewer data directory:**
 
    ```powershell
    $dest = "$env:APPDATA\zen-pdf-viewer"
    New-Item -ItemType Directory -Force $dest
-   Copy-Item C:\Tools\zen-pdf-viewer\viewer.html $dest
+   Copy-Item C:\Tools\zen-pdf-viewer\viewer.html, C:\Tools\zen-pdf-viewer\zen-server.py $dest
    ```
 
 3. **Verify Python 3 is available:**
@@ -396,7 +396,7 @@ By default the viewer loads PDF.js from a CDN. To run fully offline:
 
 ## How It Works
 
-1. The **launcher** (`launch.sh` / `launch.ps1`) copies the requested PDF into a temporary directory alongside `viewer.html`, then starts `python3 -m http.server` bound to `127.0.0.1` on a randomly chosen free port.
+1. The **launcher** (`launch.sh` / `launch.ps1`) copies the requested PDF into a temporary directory alongside `viewer.html`, then starts `zen-server.py` bound to `127.0.0.1` on an ephemeral port (port 0 bind, no race). The server exits automatically after 30 minutes without requests.
 2. **PDF.js** (loaded from CDN or vendored locally) parses each page and renders it as **SVG by default** for vector-sharp browser/pinch zoom.
 3. A **text layer** is rendered on top using `renderTextLayer`, making text selectable and copyable.
 4. In **Zen mode with SVG backend**, a filter-based SVG path is used for dark rendering. This keeps SVG sharpness but may look different from the older pixel-heuristic Zen filter.
@@ -445,7 +445,7 @@ Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once in PowerShell, or
 - The HTTP server binds **only to `127.0.0.1`** — it is never reachable from the network.
 - PDFs are copied into a temporary directory under `/tmp` (Linux/macOS) or `%TEMP%` (Windows) and served from there. The original file is never modified.
 - By default, PDF.js and its worker are fetched from `unpkg.com`. The main script tag includes an SRI hash; vendor locally (see above) for fully offline or air-gapped use.
-- Temporary directories are left on disk after the viewer closes. Clean them up with `rm -rf /tmp/zen-pdf.*` on Linux/macOS or `Remove-Item $env:TEMP\zen-pdf-*` on Windows if disk space is a concern.
+- Temporary directories are left on disk after the viewer closes, but idle servers exit after 30 minutes. Clean temp dirs with `rm -rf /tmp/zen-pdf.*` on Linux/macOS or `Remove-Item $env:TEMP\zen-pdf-*` on Windows if disk space is a concern.
 
 ---
 

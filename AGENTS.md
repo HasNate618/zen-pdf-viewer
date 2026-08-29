@@ -11,6 +11,7 @@ When adding features, follow the existing zero-dependency mindset before suggest
 
 ## Workspace layout
 viewer.html is the single UI entry point and holds the CSS, DOM skeleton, and event wiring for the viewer.
+zen-server.py is the small idle-timeout HTTP server the launchers copy into each temp session.
 README.md is the orientation reference; keep it up to date with any workflow changes you introduce.
 The launcher helper lives outside git but the README describes how to install it under ~/.local/bin/zen-pdf-viewer.
 Any new assets should live in a dedicated folder (suggested: vendor/ or assets/) so the repo stays organized.

@@ -51,11 +51,23 @@ if [ ! -f "$PDFJS_DIR/viewer.html" ]; then
   exit 1
 fi
 
+SERVER_PY="$PDFJS_DIR/zen-server.py"
+if [ ! -f "$SERVER_PY" ]; then
+  echo "zen-server.py not found at $SERVER_PY" >&2
+  echo "Run the install step from the README and try again." >&2
+  exit 1
+fi
+
 # --- temp dir ----------------------------------------------------------------
 
 TMPDIR=$(mktemp -d /tmp/zen-pdf.XXXXXX) || exit 1
 cp -a "$PDFJS_DIR/viewer.html" "$TMPDIR/" || {
   echo "Failed to copy viewer.html" >&2
+  rm -rf "$TMPDIR"
+  exit 1
+}
+cp -a "$SERVER_PY" "$TMPDIR/" || {
+  echo "Failed to copy zen-server.py" >&2
   rm -rf "$TMPDIR"
   exit 1
 }
@@ -89,23 +101,28 @@ case "$arg" in
     ;;
 esac
 
-# --- find a free port and start the server -----------------------------------
+# --- start the server (binds port 0 directly; no TOCTOU race) ---------------
 
-PORT=$(python3 - <<'PY'
-import socket
-s = socket.socket()
-s.bind(("127.0.0.1", 0))
-print(s.getsockname()[1])
-s.close()
-PY
-)
-
-nohup python3 -m http.server "$PORT" --bind 127.0.0.1 --directory "$TMPDIR" \
+PORT_FILE="$TMPDIR/port"
+nohup python3 "$TMPDIR/zen-server.py" "$TMPDIR" --port-file "$PORT_FILE" \
   >/dev/null 2>&1 &
 SERVER_PID=$!
 
+PORT=""
+for _ in $(seq 1 30); do
+  if [ -f "$PORT_FILE" ]; then
+    PORT=$(cat "$PORT_FILE")
+    break
+  fi
+  sleep 0.1
+done
+
+if [ -z "$PORT" ]; then
+  echo "Local viewer server did not report a port in time" >&2
+  exit 1
+fi
+
 # Wait until the server is up (up to 3 s).
-# Probe with python3 (already required) so wget-only systems without curl work.
 ready=0
 for _ in $(seq 1 30); do
   if python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:$PORT/viewer.html', timeout=1)" >/dev/null 2>&1; then
@@ -123,8 +140,7 @@ fi
 
 enc_file=$(urlencode "doc.pdf")
 enc_fg=$(urlencode "#e6e6e6")
-enc_bg=$(urlencode "rgba(0,0,0,0.45)")
-URL="http://127.0.0.1:$PORT/viewer.html?file=$enc_file&zen=1&fg=$enc_fg&bg=$enc_bg"
+URL="http://127.0.0.1:$PORT/viewer.html?file=$enc_file&zen=1&fg=$enc_fg"
 
 $OPEN_CMD "$URL" >/dev/null 2>&1 &
 printf 'Zen PDF viewer: %s  (server pid %s, tmpdir %s)\n' "$URL" "$SERVER_PID" "$TMPDIR" >&2

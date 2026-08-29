@@ -16,6 +16,7 @@ $ErrorActionPreference = "Stop"
 
 $viewerDir  = Join-Path $env:APPDATA "zen-pdf-viewer"
 $viewerHtml = Join-Path $viewerDir "viewer.html"
+$serverPy   = Join-Path $viewerDir "zen-server.py"
 
 if (-not (Test-Path $viewerHtml)) {
     Write-Error @"
@@ -27,11 +28,21 @@ Run the install step from the README and try again:
     exit 1
 }
 
+if (-not (Test-Path $serverPy)) {
+    Write-Error @"
+zen-server.py not found at $serverPy
+Run the install step from the README and try again:
+  Copy-Item zen-server.py "$viewerDir"
+"@
+    exit 1
+}
+
 # --- create a temp dir -------------------------------------------------------
 
 $tmpDir  = Join-Path $env:TEMP ("zen-pdf-" + [System.IO.Path]::GetRandomFileName())
 New-Item -ItemType Directory -Path $tmpDir | Out-Null
 Copy-Item $viewerHtml $tmpDir
+Copy-Item $serverPy $tmpDir
 
 # --- resolve PDF -------------------------------------------------------------
 
@@ -44,20 +55,28 @@ if ($Path -match '^https?://') {
     Copy-Item $resolved $tmpPdf
 }
 
-# --- find a free port --------------------------------------------------------
+# --- start the server (binds port 0 directly; no TOCTOU race) ----------------
 
-$listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
-$listener.Start()
-$port = $listener.LocalEndpoint.Port
-$listener.Stop()
-
-# --- start the server --------------------------------------------------------
-
+$portFile = Join-Path $tmpDir "port"
 $serverProc = Start-Process python -ArgumentList @(
-    "-m", "http.server", $port,
-    "--bind", "127.0.0.1",
-    "--directory", $tmpDir
+    (Join-Path $tmpDir "zen-server.py"),
+    $tmpDir,
+    "--port-file", $portFile
 ) -WindowStyle Hidden -PassThru
+
+$port = $null
+for ($i = 0; $i -lt 30; $i++) {
+    Start-Sleep -Milliseconds 100
+    if (Test-Path $portFile) {
+        $port = Get-Content $portFile -Raw
+        break
+    }
+}
+
+if (-not $port) {
+    Write-Error "Local viewer server did not report a port in time."
+    exit 1
+}
 
 # Wait up to 3 s for the server to respond
 $ready = $false
@@ -79,8 +98,7 @@ if (-not $ready) {
 
 $encFile = [Uri]::EscapeDataString("doc.pdf")
 $encFg   = [Uri]::EscapeDataString("#e6e6e6")
-$encBg   = [Uri]::EscapeDataString("rgba(0,0,0,0.45)")
-$url     = "http://127.0.0.1:$port/viewer.html?file=$encFile&zen=1&fg=$encFg&bg=$encBg"
+$url     = "http://127.0.0.1:$port/viewer.html?file=$encFile&zen=1&fg=$encFg"
 
 Start-Process $url
 Write-Host "Zen PDF viewer: $url  (server pid $($serverProc.Id), tmpdir $tmpDir)"
