@@ -376,17 +376,21 @@ http://127.0.0.1:PORT/viewer.html?file=doc.pdf&zen=1&imgcolor=0
 
 ### Offline / Vendored PDF.js
 
+The viewer pins **PDF.js 2.16.105** and loads it from unpkg with a Subresource Integrity hash. Stay on the 2.x line: `SVGGraphics` (used for vector-first rendering) was removed in PDF.js v4, so bumping to current 4.x releases would break the default SVG path.
+
 By default the viewer loads PDF.js from a CDN. To run fully offline:
 
-1. Download `pdf.min.js` and `pdf.worker.min.js` from the [PDF.js releases page](https://github.com/mozilla/pdf.js/releases) (match the version in `viewer.html`).
+1. Download `pdf.min.js` and `pdf.worker.min.js` from the [PDF.js releases page](https://github.com/mozilla/pdf.js/releases) (match **2.16.105** in `viewer.html`).
 2. Place them in a `vendor/` folder inside the repo.
 3. In `viewer.html`, update:
-   ```js
-   // script src tag
+   ```html
    <script src="./vendor/pdf.min.js"></script>
-   // inside the script
+   ```
+   and inside the script:
+   ```js
    pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.min.js';
    ```
+4. Remove the CDN `integrity`/`crossorigin` attributes when serving locally.
 
 ---
 
@@ -440,7 +444,7 @@ Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once in PowerShell, or
 
 - The HTTP server binds **only to `127.0.0.1`** — it is never reachable from the network.
 - PDFs are copied into a temporary directory under `/tmp` (Linux/macOS) or `%TEMP%` (Windows) and served from there. The original file is never modified.
-- By default, PDF.js and its worker are fetched from `unpkg.com`. Vendor them locally (see above) for fully offline or air-gapped use.
+- By default, PDF.js and its worker are fetched from `unpkg.com`. The main script tag includes an SRI hash; vendor locally (see above) for fully offline or air-gapped use.
 - Temporary directories are left on disk after the viewer closes. Clean them up with `rm -rf /tmp/zen-pdf.*` on Linux/macOS or `Remove-Item $env:TEMP\zen-pdf-*` on Windows if disk space is a concern.
 
 ---

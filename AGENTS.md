@@ -26,6 +26,8 @@ If a script is necessary, keep it small, shell-compatible, and comfortable for P
 - There is no build or lint pipeline, so keep tooling lightweight and document any new scripts you add.
 - Locate fonts, CDN references, or other external resources in viewer.html before adding additional URLs.
 - If you vendor PDF.js, keep `pdf.min.js` and `pdf.worker.min.js` in the same folder and update the workerSrc accordingly.
+- The viewer pins PDF.js **2.16.105** on the 2.x line because `SVGGraphics` was removed in v4; do not bump to 4.x without replacing the SVG renderer.
+- CDN loads use an SRI hash on `pdf.min.js`; update it whenever the pinned PDF.js version changes.
 
 ## Single-test flow
 - Run `python3 -m http.server 8000 --bind 127.0.0.1` so the repo is served locally.
