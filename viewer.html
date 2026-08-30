@@ -227,7 +227,7 @@ input[type="range"] { accent-color: #4ade7f; }
       <div class="keybind-key">r</div><div class="keybind-desc">Rotate by 90 degrees</div>      <div class="keybind-key">z</div><div class="keybind-desc">Toggle Zen reading filter</div>
       <div class="keybind-key">c</div><div class="keybind-desc">Toggle color in Zen mode</div><div class="keybind-key">p</div><div class="keybind-desc">Toggle pageless layout</div>
       <div class="keybind-key">d</div><div class="keybind-desc">Toggle dual page view</div><div class="keybind-key">F11</div><div class="keybind-desc">Toggle fullscreen mode</div>
-      <div class="keybind-key">=, +, -</div><div class="keybind-desc">Zoom in / out</div><div class="keybind-key">0</div><div class="keybind-desc">Reset zoom to fit the page width</div>
+      <div class="keybind-key">=, +, -</div><div class="keybind-desc">Zoom in / out</div><div class="keybind-key">0, w</div><div class="keybind-desc">Reset to default width / fit page to window width</div>
       <div class="keybind-key">R</div><div class="keybind-desc">Reload document</div><div class="keybind-key">q</div><div class="keybind-desc">Quit</div>
     </div>
     <div style="text-align:right; margin-top:8px"><button id="keybindsCloseBtn">Close</button></div>
@@ -245,6 +245,22 @@ input[type="range"] { accent-color: #4ade7f; }
   const theme = {
     fg: params.get("fg") || "#e6e6e6",
   };
+
+  function parseInitialPageParam() {
+    const raw = params.get("page");
+    if (!raw) return 1;
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n >= 1 ? n : 1;
+  }
+
+  function parseFullWidthFitParam() {
+    const fit = (params.get("fit") || "").toLowerCase();
+    if (fit === "full" || fit === "width") return true;
+    const fw = params.get("fullwidth");
+    return fw === "1" || fw === "true";
+  }
+
+  const urlOpenFullWidth = parseFullWidthFitParam();
 
   const perf = {
     renderBehind: 12,
@@ -1229,7 +1245,7 @@ input[type="range"] { accent-color: #4ade7f; }
     return layout.preferredPortraitDpi / layout.pdfPointDpi;
   }
 
-  async function getModeFitScale({ pageNumber } = {}) {
+  async function getModeFitScale({ pageNumber, fullWidth = false } = {}) {
     if (!state.pdfDoc) return 1;
     const pageNo = clamp(
       Number.isFinite(pageNumber) ? pageNumber : (state.currentPage || 1),
@@ -1248,7 +1264,7 @@ input[type="range"] { accent-color: #4ade7f; }
     } else {
       const widthFitScale = getWidthFitScale(vp, availableW);
       const isLandscape = vp.width >= vp.height;
-      nextScale = isLandscape
+      nextScale = fullWidth || isLandscape
         ? widthFitScale
         : Math.min(getPortraitPreferredScale(), widthFitScale);
     }
@@ -1256,10 +1272,10 @@ input[type="range"] { accent-color: #4ade7f; }
     return Math.max(nextScale, 0.1);
   }
 
-  async function adjustScaleToMode({ skipWhenZoomedIn = false, pageNumber } = {}) {
+  async function adjustScaleToMode({ skipWhenZoomedIn = false, pageNumber, fullWidth = false } = {}) {
     if (!state.pdfDoc) return false;
     try {
-      const fitScale = await getModeFitScale({ pageNumber });
+      const fitScale = await getModeFitScale({ pageNumber, fullWidth });
       if (skipWhenZoomedIn && state.scale > fitScale + 0.01) {
         return false;
       }
@@ -1277,8 +1293,8 @@ input[type="range"] { accent-color: #4ade7f; }
     });
   }
 
-  async function resetToFitWidth({ pageNumber } = {}) {
-    await adjustScaleToMode({ pageNumber });
+  async function resetToFitWidth({ pageNumber, fullWidth = false } = {}) {
+    await adjustScaleToMode({ pageNumber, fullWidth });
     await rerenderRenderedPages();
     alignFitWidthView();
   }
@@ -1697,9 +1713,9 @@ input[type="range"] { accent-color: #4ade7f; }
     }
   }
 
-  async function resetAndRender() {
+  async function resetAndRender({ skipAnchorRestore = false } = {}) {
     if (!state.pdfDoc) return;
-    const anchor = getViewportAnchor();
+    const anchor = skipAnchorRestore ? null : getViewportAnchor();
     if (state.pageObserver) {
       state.pageObserver.disconnect();
       state.pageObserver = null;
@@ -1711,12 +1727,12 @@ input[type="range"] { accent-color: #4ade7f; }
     if (state.isSmallDoc) {
       await renderAllPages();
       initPageObserver();
-      restoreViewportAnchorStable(anchor);
+      if (anchor) restoreViewportAnchorStable(anchor);
       updateDisplayScaleSnapshot();
       return;
     }
     initPageObserver();
-    restoreViewportAnchorStable(anchor);
+    if (anchor) restoreViewportAnchorStable(anchor);
     state.renderPending = false;
     await renderWindow();
     updateDisplayScaleSnapshot();
@@ -2043,6 +2059,11 @@ input[type="range"] { accent-color: #4ade7f; }
          e.preventDefault();
          return;
        }
+      if (e.key === 'w' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        await resetToFitWidth({ pageNumber: state.currentPage, fullWidth: true });
+        e.preventDefault();
+        return;
+      }
 
       if (bookmarkKey) {
         goToBookmark(Number.parseInt(e.key, 10));
@@ -2136,9 +2157,11 @@ input[type="range"] { accent-color: #4ade7f; }
       }, 110);
 
       // Initial adjust and set resize handler to auto-fill on window changes.
+      const initialPage = clamp(parseInitialPageParam(), 1, state.pdfDoc.numPages);
+      state.currentPage = initialPage;
       const firstPage = await getPdfPage(1);
       state.baseViewport = firstPage.getViewport({ scale: 1, rotation: 0 });
-      await adjustScaleToMode({ pageNumber: 1 });
+      await adjustScaleToMode({ pageNumber: initialPage, fullWidth: urlOpenFullWidth });
       state.baseDevicePixelRatio = Math.max(window.devicePixelRatio || 1, 1);
       updateDisplayScaleSnapshot();
       window.addEventListener('resize', onWindowResize);
@@ -2147,7 +2170,8 @@ input[type="range"] { accent-color: #4ade7f; }
         window.visualViewport.addEventListener('scroll', onViewportResize, { passive: true });
       }
 
-      await resetAndRender();
+      await resetAndRender({ skipAnchorRestore: initialPage > 1 });
+      if (initialPage > 1) goToPage(initialPage, false, false);
       alignFitWidthView();
     } catch (err) {
       showError(`Could not render PDF: ${err?.message || err}`);

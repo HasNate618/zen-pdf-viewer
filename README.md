@@ -341,7 +341,8 @@ The launcher copies the PDF into a temporary directory, starts a local HTTP serv
 | `d` | Toggle dual-page view |
 | `p` | Toggle pageless transparent layout |
 | `=` / `+` / `-` | Zoom in / out |
-| `0` | Reset zoom to fit the page width |
+| `0` | Reset zoom to default width (portrait docs cap at ~120 DPI) |
+| `w` | Fit page to window width |
 | `R` | Reload document |
 | `F11` | Toggle fullscreen |
 | `q` | Quit / close tab |
@@ -353,7 +354,7 @@ The launcher copies the PDF into a temporary directory, starts a local HTTP serv
 You can also open the viewer directly in a browser without the launcher, or pass parameters manually:
 
 ```
-http://127.0.0.1:PORT/viewer.html?file=doc.pdf&zen=1&imgcolor=0
+http://127.0.0.1:PORT/viewer.html?file=doc.pdf&zen=1&imgcolor=0&page=42&fit=full
 ```
 
 | Parameter | Default | Description |
@@ -363,9 +364,11 @@ http://127.0.0.1:PORT/viewer.html?file=doc.pdf&zen=1&imgcolor=0
 | `imgcolor` | `1` | Preserve image colors in Zen mode: `1` = keep (default), `0` = recolor |
 | `dual` | `0` | Dual-page view: `1` = enabled |
 | `pageless` | same as `zen` | Pageless/transparent mode: `1` = enabled |
+| `page` | `1` | Open at this page number (1-based) |
+| `fit` | `default` | Initial scale: `default` = portrait docs cap at ~120 DPI; `full` or `width` = fit page to window width (same as `w`) |
+| `fullwidth` | `0` | Alias for `fit=full`: `1` or `true` |
 | `svg` | `1` | Rendering backend preference: `1` = SVG-first (vector), `0` = force canvas |
 | `fg` | `#e6e6e6` | Foreground/text color (URL-encoded hex) |
-| `bg` | `rgba(0,0,0,0.45)` | Toolbar background color |
 
 **Smart Page Caching:** Documents with ≤150 pages render all pages upfront on open and keep them in the DOM for instant scrolling. Larger documents use dynamic windowing to preserve memory. The viewer also applies a separate large-document optimization (reduced DPR and tighter windowing) when a document has ≥300 pages (controlled by `perf.largeDocPages` in `viewer.html`). The small-doc threshold is configurable (`perf.smallDocThreshold`).
 
