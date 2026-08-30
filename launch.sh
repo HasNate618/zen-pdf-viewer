@@ -42,8 +42,16 @@ fi
 # Reap stale temp dirs older than 7 days (best-effort).
 find /tmp -maxdepth 1 -type d -name 'zen-pdf.*' -mtime +7 -exec rm -rf {} + 2>/dev/null || true
 
-# Nix and manual installs can override the data directory.
-PDFJS_DIR="${ZEN_PDF_VIEWER_DATA_DIR:-$HOME/.local/share/zen-pdf-viewer}"
+# When launch.sh lives beside viewer.html (repo/dev checkout), always use that
+# tree so edits are picked up without rebuilding Nix or setting env vars.
+LAUNCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$LAUNCH_DIR/viewer.html" ]; then
+  PDFJS_DIR="$LAUNCH_DIR"
+elif [ -n "${ZEN_PDF_VIEWER_DATA_DIR:-}" ]; then
+  PDFJS_DIR="$ZEN_PDF_VIEWER_DATA_DIR"
+else
+  PDFJS_DIR="$HOME/.local/share/zen-pdf-viewer"
+fi
 if [ ! -f "$PDFJS_DIR/viewer.html" ] && [ -d "$HOME/Library" ]; then
   PDFJS_DIR="$HOME/Library/Application Support/zen-pdf-viewer"
 fi

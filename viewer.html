@@ -346,6 +346,7 @@ input[type="range"] { accent-color: #4ade7f; }
   state.isSmallDoc = false;
   state.renderedPagesMru = [];  // MRU list for page cache eviction
   state.bookmarks = new Map();
+  state.pagelessRasterZenDoc = false;
 
   function clamp(v, min, max) {
     return Math.min(max, Math.max(min, v));
@@ -525,6 +526,19 @@ input[type="range"] { accent-color: #4ade7f; }
     return luma >= zen.paperLumaMin && chroma <= zen.paperChromaMax;
   }
 
+  // Tighter match for pageless transparency — avoids punching light grey text as paper.
+  function isStrictPaperPixel(r, g, b, a, pageBg) {
+    if (a < 4) return true;
+    const { luma, chroma } = pixelLumaChroma(r, g, b);
+    if (chroma > zen.paperChromaMax) return false;
+    if (pageBg) {
+      if (rgbDistance(r, g, b, pageBg.r, pageBg.g, pageBg.b) > 24) return false;
+      if (pageBg.isDark) return luma <= pageBg.luma + 12;
+      return luma >= pageBg.luma - 12;
+    }
+    return luma >= zen.paperLumaMin && chroma <= zen.paperChromaMax;
+  }
+
   function applyPaperTreatment(data, index) {
     if (state.pageless) {
       data[index + 3] = 0;
@@ -536,13 +550,16 @@ input[type="range"] { accent-color: #4ade7f; }
     data[index + 3] = 255;
   }
 
-  function buildBackgroundMask(d, w, h, pageBg) {
+  function buildBackgroundMask(d, w, h, pageBg, { includeFringe = true, strictPaper = false } = {}) {
+    const isPaper = strictPaper ? isStrictPaperPixel : isBackgroundPixel;
     const mask = new Uint8Array(w * h);
     for (let p = 0; p < w * h; p++) {
       const i = p * 4;
       if (d[i + 3] === 0) continue;
-      if (isBackgroundPixel(d[i], d[i + 1], d[i + 2], d[i + 3], pageBg)) mask[p] = 1;
+      if (isPaper(d[i], d[i + 1], d[i + 2], d[i + 3], pageBg)) mask[p] = 1;
     }
+
+    if (!includeFringe) return mask;
 
     for (let y = 1; y < h - 1; y++) {
       for (let x = 1; x < w - 1; x++) {
@@ -577,12 +594,20 @@ input[type="range"] { accent-color: #4ade7f; }
     return mask;
   }
 
-  function applyZenFilter(ctx, w, h, keepImagesColor) {
+  function applyZenFilter(ctx, w, h, keepImagesColor, { pagelessRaster = false } = {}) {
     const img = ctx.getImageData(0, 0, w, h);
     const d = img.data;
     const pageBg = detectCanvasBackground(d, w, h);
+    const usePagelessRaster = state.pageless && pagelessRaster;
 
-    if (state.pageless && w > 2 && h > 2) {
+    if (usePagelessRaster && w > 2 && h > 2) {
+      // Fringe expansion eats text anti-aliasing; strict paper mask only in pageless raster pages.
+      const bgMask = buildBackgroundMask(d, w, h, pageBg, { includeFringe: false, strictPaper: true });
+      for (let p = 0; p < w * h; p++) {
+        if (!bgMask[p]) continue;
+        applyPaperTreatment(d, p * 4);
+      }
+    } else if (state.pageless && w > 2 && h > 2) {
       const bgMask = buildBackgroundMask(d, w, h, pageBg);
       for (let p = 0; p < w * h; p++) {
         if (!bgMask[p]) continue;
@@ -590,7 +615,9 @@ input[type="range"] { accent-color: #4ade7f; }
       }
     }
 
-    const recolorLut = getZenRecolorLut(keepImagesColor, pageBg);
+    // Scanned raster pages always invert; vector slides keep normal dark-bg handling.
+    const recolorBg = (usePagelessRaster && pageBg) ? { ...pageBg, isDark: false } : pageBg;
+    const recolorLut = getZenRecolorLut(keepImagesColor, recolorBg);
 
     for (let i = 0; i < d.length; i += 4) {
       const a = d[i + 3];
@@ -610,7 +637,7 @@ input[type="range"] { accent-color: #4ade7f; }
       d[i + 1] = ng;
       d[i + 2] = nb;
 
-      if (state.pageless && !pageBg?.isDark) {
+      if (state.pageless && !usePagelessRaster && !pageBg?.isDark) {
         const post = pixelLumaChroma(nr, ng, nb);
         if (post.luma < 14) d[i + 3] = 0;
       }
@@ -682,6 +709,65 @@ input[type="range"] { accent-color: #4ade7f; }
     return best;
   }
 
+  function clearPageBackgroundRect(svg, viewport, pageBg) {
+    if (!pageBg) return;
+    const vw = parseFloat(svg.getAttribute("width")) || viewport?.width || 0;
+    const vh = parseFloat(svg.getAttribute("height")) || viewport?.height || 0;
+    svg.querySelectorAll("rect").forEach((el) => {
+      if (el.closest("defs")) return;
+      const w = parseFloat(el.getAttribute("width") || 0);
+      const h = parseFloat(el.getAttribute("height") || 0);
+      if (!vw || !vh || w < vw * 0.7 || h < vh * 0.7) return;
+      const fill = el.getAttribute("fill") || el.style?.fill;
+      if (!paintMatchesBackground(fill, pageBg)) return;
+      el.setAttribute("fill", "none");
+      el.setAttribute("fill-opacity", "0");
+      if (el.style) el.style.fill = "none";
+    });
+  }
+
+  function svgHasDominantRasterImage(svg, viewport) {
+    const vw = parseFloat(svg.getAttribute("width")) || viewport?.width || 0;
+    const vh = parseFloat(svg.getAttribute("height")) || viewport?.height || 0;
+    if (!vw || !vh) return false;
+    const minArea = vw * vh * 0.55;
+    for (const img of svg.querySelectorAll("image")) {
+      if (img.closest("defs")) continue;
+      const w = parseFloat(img.getAttribute("width") || 0);
+      const h = parseFloat(img.getAttribute("height") || 0);
+      if (w * h >= minArea) return true;
+    }
+    return false;
+  }
+
+  // Scanned pages are a full-page bitmap with almost no vectors; slides can
+  // have large photos but still carry many path/text elements.
+  function svgNeedsPagelessRasterZen(svg, viewport) {
+    if (!state.pagelessRasterZenDoc) return false;
+    return svgHasDominantRasterImage(svg, viewport);
+  }
+
+  async function detectPagelessRasterZenDoc(pdfDoc) {
+    try {
+      const meta = await pdfDoc.getMetadata();
+      const info = meta?.info || {};
+      const blob = `${info.Title || ""} ${info.Author || ""} ${info.Subject || ""}`.toLowerCase();
+      if (/pptxgenjs|powerpoint|presentation|\.pptx|\bslides?\b/.test(blob)) return false;
+
+      const page = await pdfDoc.getPage(1);
+      const vp = page.getViewport({ scale: 1, rotation: 0 });
+      const aspect = vp.width / vp.height;
+      // Widescreen slide exports (16:9, etc.).
+      if (aspect > 1.25) return false;
+
+      // Book-length portrait docs where scan pages are full-page bitmaps.
+      if (pdfDoc.numPages >= 80 && aspect < 0.95) return true;
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
   function clearBackgroundSvgPaints(svg, pageBg) {
     const paintAttrs = ["fill", "stroke"];
     svg.querySelectorAll("*").forEach((el) => {
@@ -695,7 +781,7 @@ input[type="range"] { accent-color: #4ade7f; }
     });
   }
 
-  async function applyZenToSvgImages(svg, keepImagesColor) {
+  async function applyZenToSvgImages(svg, keepImagesColor, { pagelessRaster = false } = {}) {
     const images = [...svg.querySelectorAll("image")];
     await Promise.all(images.map(async (img) => {
       const href = img.getAttribute("href") || img.getAttribute("xlink:href");
@@ -716,7 +802,7 @@ input[type="range"] { accent-color: #4ade7f; }
         imageEl.src = href;
       });
       ctx.drawImage(imageEl, 0, 0, w, h);
-      applyZenFilter(ctx, w, h, keepImagesColor);
+      applyZenFilter(ctx, w, h, keepImagesColor, { pagelessRaster });
       img.setAttribute("href", canvas.toDataURL("image/png"));
       img.removeAttribute("xlink:href");
       img.style.filter = "";
@@ -731,8 +817,15 @@ input[type="range"] { accent-color: #4ade7f; }
   async function applySvgZenStyle(svg, keepImagesColor, viewport) {
     svg.style.filter = "";
     const pageBg = detectSvgBackground(svg, viewport);
-    clearBackgroundSvgPaints(svg, pageBg);
-    await applyZenToSvgImages(svg, keepImagesColor);
+    const pagelessRaster = state.pageless && svgNeedsPagelessRasterZen(svg, viewport);
+
+    if (state.pageless) {
+      clearPageBackgroundRect(svg, viewport, pageBg);
+    } else {
+      clearBackgroundSvgPaints(svg, pageBg);
+    }
+
+    await applyZenToSvgImages(svg, keepImagesColor, { pagelessRaster });
 
     const monoFilter = zen.filterMono;
     const colorFilter = zen.filterKeepHue;
@@ -1237,7 +1330,9 @@ input[type="range"] { accent-color: #4ade7f; }
     await page.render(renderParams).promise;
 
     if (state.zenMode) {
-      applyZenFilter(ctx, canvas.width, canvas.height, state.keepImagesColor);
+      applyZenFilter(ctx, canvas.width, canvas.height, state.keepImagesColor, {
+        pagelessRaster: state.pageless && state.pagelessRasterZenDoc,
+      });
     }
     shell.appendChild(canvas);
   }
@@ -1997,6 +2092,7 @@ input[type="range"] { accent-color: #4ade7f; }
 
     state.largeDoc = state.pdfDoc.numPages >= perf.largeDocPages;
     state.isSmallDoc = state.pdfDoc.numPages <= perf.smallDocThreshold;
+    state.pagelessRasterZenDoc = await detectPagelessRasterZenDoc(state.pdfDoc);
     state.bookmarks = new Map();
     loadBookmarks();
     
