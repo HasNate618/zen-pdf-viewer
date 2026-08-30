@@ -1670,7 +1670,18 @@ input[type="range"] { accent-color: #4ade7f; }
     const anchor = getViewportAnchor();
     beginRenderMutation();
     const token = ++state.renderToken;
+
+    // Zoom and fit-width change state.scale but leave old shells in the DOM unless
+    // we drop the render cache first (renderPagesWithPool skips renderedPages).
+    for (const pageNo of [...state.renderedPages]) {
+      replaceWithPlaceholder(pageNo);
+    }
+    state.renderedPages.clear();
+    state.renderedPagesMru = [];
+    state.pageSizes.clear();
     updatePlaceholderSizes();
+    void prefetchPlaceholderSizes();
+
     try {
       await renderPagesWithPool(pages, token, async (pageNo, pageNode) => {
         if (token !== state.renderToken) return;
