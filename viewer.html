@@ -1185,7 +1185,7 @@ input[type="range"] { accent-color: #4ade7f; }
     if (renderStatusEl) renderStatusEl.hidden = true;
   }
 
-  async function renderPagesWithPool(pageNumbers, token, onRendered, { onProgress } = {}) {
+  async function renderPagesWithPool(pageNumbers, token, onRendered, { onProgress, forceRerender = false } = {}) {
     const concurrency = Math.min(getEffectiveRenderConcurrency(), pageNumbers.length);
     if (concurrency === 0) return;
     let nextIndex = 0;
@@ -1198,7 +1198,7 @@ input[type="range"] { accent-color: #4ade7f; }
         const idx = nextIndex++;
         if (idx >= pageNumbers.length) return;
         const pageNo = pageNumbers[idx];
-        if (state.renderedPages.has(pageNo)) {
+        if (!forceRerender && state.renderedPages.has(pageNo)) {
           touchRenderedPageMru(pageNo);
           if (trackProgress) onProgress(++completed, pageNumbers.length);
           continue;
@@ -1642,12 +1642,11 @@ input[type="range"] { accent-color: #4ade7f; }
     }
   }
 
-  function getRefreshPageOrder() {
+  function getViewportWindowPageOrder() {
     if (!state.pdfDoc) return [];
     const total = state.pdfDoc.numPages;
     const center = clamp(state.currentPage || 1, 1, total);
-    const preferredOrder = buildRenderOrder(total, center);
-    if (state.isSmallDoc) return preferredOrder;
+    if (state.isSmallDoc) return buildRenderOrder(total, center);
     const start = clamp(center - perf.renderBehind, 1, total);
     const end = clamp(center + perf.renderAhead, 1, total);
     const windowOrder = buildRenderOrder(end - start + 1, center - start + 1)
@@ -1655,32 +1654,32 @@ input[type="range"] { accent-color: #4ade7f; }
     const visibleOrder = Array.from(state.visiblePages.keys())
       .map((pageNo) => clamp(Number.parseInt(pageNo, 10) || 1, 1, total))
       .filter((pageNo, idx, arr) => arr.indexOf(pageNo) === idx);
-    const renderedOrder = state.renderedPagesMru
-      .slice()
-      .reverse()
-      .map((pageNo) => clamp(Number.parseInt(pageNo, 10) || 1, 1, total));
-    return [...new Set([...visibleOrder, ...windowOrder, ...renderedOrder])];
+    return [...new Set([...visibleOrder, ...windowOrder])];
   }
 
   async function rerenderRenderedPages() {
     if (!state.pdfDoc) return;
     clearSvgImageZenCache();
     updateCurrentPageFromScroll();
-    const pages = getRefreshPageOrder();
+    const pages = getViewportWindowPageOrder();
+    const refreshSet = new Set(pages);
     const anchor = getViewportAnchor();
     beginRenderMutation();
     const token = ++state.renderToken;
 
-    // Zoom and fit-width change state.scale but leave old shells in the DOM unless
-    // we drop the render cache first (renderPagesWithPool skips renderedPages).
+    // Drop off-window cache entries to placeholders (cheap); only rerender the viewport window.
     for (const pageNo of [...state.renderedPages]) {
-      replaceWithPlaceholder(pageNo);
+      if (!refreshSet.has(pageNo)) replaceWithPlaceholder(pageNo);
     }
-    state.renderedPages.clear();
-    state.renderedPagesMru = [];
+    for (const pageNo of pages) state.renderedPages.delete(pageNo);
+
     state.pageSizes.clear();
     updatePlaceholderSizes();
     void prefetchPlaceholderSizes();
+
+    const progressOpts = pages.length > 8
+      ? { onProgress: (done, total) => showRenderProgress(done, total), forceRerender: true }
+      : { forceRerender: true };
 
     try {
       await renderPagesWithPool(pages, token, async (pageNo, pageNode) => {
@@ -1688,8 +1687,9 @@ input[type="range"] { accent-color: #4ade7f; }
         swapPageShell(pageNo, pageNode);
         state.renderedPages.add(pageNo);
         touchRenderedPageMru(pageNo);
-      });
+      }, progressOpts);
     } finally {
+      if (progressOpts.onProgress) hideRenderProgress();
       restoreViewportAnchorStable(anchor);
       updateDisplayScaleSnapshot();
       endRenderMutation();
