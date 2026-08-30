@@ -58,6 +58,7 @@ Trigger the toast dismissal flow and make sure cookies suppress repeate invites;
 Open the keybind overlay (Esc) and ensure compactKeybindsTable still renders clean table markup.
 Use pointer drags across the text layer to confirm selection logic naturally prevents jumps when leaving text.
 Verify cross-page selection (page-1 text -> page-2 text in pageless mode) still bridges via the `selBridge` handler; same-page drags must remain fully native (no pointer override) so empty-area drags stay predictable.
+For embed mode, load the viewer in an iframe with `embed=1` and confirm Escape posts `zenpdf-escape` when the keybind overlay is closed, Tab posts `zenpdf-tab` when no bookmarks are assigned, and `q` does nothing.
 Checking these paths manually is the most reliable regression guard because there are no automated suites.
 
 ## JavaScript style guidelines

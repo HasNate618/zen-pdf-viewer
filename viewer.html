@@ -262,6 +262,26 @@ input[type="range"] { accent-color: #4ade7f; }
 
   const urlOpenFullWidth = parseFullWidthFitParam();
 
+  function parseEmbedParam() {
+    return params.get("embed") === "1" || params.get("embedded") === "1";
+  }
+
+  const isEmbedded = parseEmbedParam();
+
+  function parseCredentialsParam() {
+    const raw = params.get("credentials");
+    if (raw === "1" || raw === "true") return true;
+    if (raw === "0" || raw === "false") return false;
+    return isEmbedded;
+  }
+
+  const urlSendCredentials = parseCredentialsParam();
+
+  function notifyParent(type) {
+    if (!isEmbedded || window.parent === window) return;
+    window.parent.postMessage({ type }, window.location.origin);
+  }
+
   const perf = {
     renderBehind: 12,
     renderAhead: 16,
@@ -1921,6 +1941,17 @@ input[type="range"] { accent-color: #4ade7f; }
         return;
       }
 
+      // Embed: Escape closes keybind overlay or returns focus to parent.
+      if (e.key === 'Escape' && isEmbedded) {
+        if (keybindsOverlay && !keybindsOverlay.hidden) {
+          closeKeybinds();
+        } else {
+          notifyParent('zenpdf-escape');
+        }
+        e.preventDefault();
+        return;
+      }
+
       // Toggle keybind viewer on Escape or ?
       if (e.key === 'Escape' || e.key === '?') {
         toggleKeybinds();
@@ -1948,7 +1979,10 @@ input[type="range"] { accent-color: #4ade7f; }
       if (e.key === 'Tab') {
         const assigned = Array.from(state.bookmarks.keys()).sort((a, b) => a - b);
         if (assigned.length === 0) {
-          // No user-saved bookmarks; allow default Tab behavior
+          if (isEmbedded) {
+            notifyParent('zenpdf-tab');
+            e.preventDefault();
+          }
           return;
         }
         e.preventDefault();
@@ -2074,10 +2108,14 @@ input[type="range"] { accent-color: #4ade7f; }
       // goto page prompt
       if (e.key === ':') { handleGotoPagePrompt(); e.preventDefault(); return; }
 
-      // quit
-      // window.close() is a silent no-op (does not throw) when the browser
-      // refuses because the window was not script-opened, so check window.closed.
-      if (e.key === 'q') { e.preventDefault(); window.close(); if (!window.closed) location.href = 'about:blank'; return; }
+      // quit (disabled in embed mode — parent owns window lifecycle)
+      if (e.key === 'q') {
+        e.preventDefault();
+        if (isEmbedded) return;
+        window.close();
+        if (!window.closed) location.href = 'about:blank';
+        return;
+      }
 
     });
   }
@@ -2093,7 +2131,7 @@ input[type="range"] { accent-color: #4ade7f; }
 
      state.pdfDoc = await pdfjsLib.getDocument({
         url: file,
-        withCredentials: false,
+        withCredentials: urlSendCredentials,
       }).promise;
 
     state.largeDoc = state.pdfDoc.numPages >= perf.largeDocPages;

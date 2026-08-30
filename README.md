@@ -369,8 +369,40 @@ http://127.0.0.1:PORT/viewer.html?file=doc.pdf&zen=1&imgcolor=0&page=42&fit=full
 | `fullwidth` | `0` | Alias for `fit=full`: `1` or `true` |
 | `svg` | `1` | Rendering backend preference: `1` = SVG-first (vector), `0` = force canvas |
 | `fg` | `#e6e6e6` | Foreground/text color (URL-encoded hex) |
+| `embed` | `0` | Embed mode for iframe hosts: `1` = enabled |
+| `credentials` | same as `embed` | Send cookies on PDF fetch: `1` = on, `0` = off |
 
-**Smart Page Caching:** Documents with ≤150 pages render all pages upfront on open and keep them in the DOM for instant scrolling. Larger documents use dynamic windowing to preserve memory. The viewer also applies a separate large-document optimization (reduced DPR and tighter windowing) when a document has ≥300 pages (controlled by `perf.largeDocPages` in `viewer.html`). The small-doc threshold is configurable (`perf.smallDocThreshold`).
+### Embedding in another app
+
+Load the viewer in an iframe and pass an absolute same-origin PDF URL:
+
+```html
+<iframe
+  src="/zen-pdf/viewer.html?file=https://app.example/api/files/42/raw&embed=1&zen=1&pageless=1"
+  style="width:100%;height:100%;border:0"
+  allowfullscreen
+></iframe>
+```
+
+When `embed=1`:
+
+- **Escape** (keybind overlay closed) posts `{ type: 'zenpdf-escape' }` to the parent so the host can return keyboard focus.
+- **Tab** with no Alt+1–9 bookmarks posts `{ type: 'zenpdf-tab' }`.
+- **`q`** quit is disabled.
+- **`credentials`** defaults to on so cookie-authenticated PDF URLs work (override with `credentials=0`).
+
+Parent listener example:
+
+```js
+window.addEventListener('message', (e) => {
+  if (e.origin !== window.location.origin) return;
+  if (e.data?.type === 'zenpdf-escape') { /* return focus to app chrome */ }
+  if (e.data?.type === 'zenpdf-tab') { /* move focus to previous control */ }
+});
+```
+
+Messages are sent to `window.location.origin` from inside the iframe.
+ Documents with ≤150 pages render all pages upfront on open and keep them in the DOM for instant scrolling. Larger documents use dynamic windowing to preserve memory. The viewer also applies a separate large-document optimization (reduced DPR and tighter windowing) when a document has ≥300 pages (controlled by `perf.largeDocPages` in `viewer.html`). The small-doc threshold is configurable (`perf.smallDocThreshold`).
 
 ---
 
