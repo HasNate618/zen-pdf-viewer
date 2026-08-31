@@ -25,8 +25,14 @@
           path: type:
           let
             name = baseNameOf path;
+            str = toString path;
           in
-          name == "viewer.html" || name == "launch.sh" || type == "directory";
+          type == "directory"
+          || name == "viewer.html"
+          || name == "launch.sh"
+          || name == "zen-server.py"
+          || name == "vendor"
+          || nixpkgs.lib.hasInfix "/vendor/" str;
       };
     in
     {
